@@ -1,19 +1,34 @@
+# app/main.py
 from fastapi import FastAPI
-from app.api.routes import router as api_router
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
-import logging
+from app.routers import router as gateway_router
+from app.config import settings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+app = FastAPI(
+    title="API Gateway Service",
+    description="Orchestrates RAG pipeline.",
+    version="1.0.0"
+)
 
-# Initialize FastAPI app
-app = FastAPI(title="RAG API Gateway")
+# Include API routers
+app.include_router(gateway_router, prefix="/api/v0")
 
-# Include API routes
-app.include_router(api_router, prefix="/api/v1")
+# Add cors middleware
+origins = [
+     "http://localhost",
+     "http://localhost:3000",
+]
+app.add_middleware(
+     CORSMiddleware,
+     allow_origins=origins,
+     allow_credentials=True,
+     allow_methods=["*"],
+     allow_headers=["*"]
+)
 
-# Health check endpoint
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health_check():
+    """Basic health check endpoint."""
     return {"status": "ok"}

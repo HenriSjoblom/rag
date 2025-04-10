@@ -16,5 +16,5 @@ lint = [
 ]
 
 [tool.uv.workspace]
-members = ["api_gateway"]
+members = ["api_gateway", "rag_service"]
 
