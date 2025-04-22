@@ -13,7 +13,7 @@ from app.models.chat import (
 )
 from .http_client import make_request, get_http_client
 
-class ChatProcessorService:
+class GenerationService:
     def __init__(
         self,
         settings: Settings,
