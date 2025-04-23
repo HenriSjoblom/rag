@@ -1,8 +1,6 @@
-# app/core/config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, DirectoryPath, FilePath, validator
+from pydantic import Field, validator, field_validator
 from typing import Literal, Optional
-import os
 from pathlib import Path
 
 class Settings(BaseSettings):
@@ -17,28 +15,30 @@ class Settings(BaseSettings):
     CHROMA_HOST: Optional[str] = Field(None, validation_alias='CHROMA_HOST')
     CHROMA_PORT: Optional[int] = Field(None, validation_alias='CHROMA_PORT')
 
-    @validator('CHROMA_LOCAL_PATH', pre=True, always=True)
-    def validate_local_path(cls, v, values):
-        mode = values.get('CHROMA_MODE')
+    @field_validator('CHROMA_LOCAL_PATH')
+    @classmethod
+    def validate_local_path(cls, v, info):
+        mode = info.data.get('CHROMA_MODE')
         if mode == 'local' and not v:
             raise ValueError("CHROMA_LOCAL_PATH must be set when CHROMA_MODE is 'local'")
         if mode == 'local' and v:
             # Ensure the path exists or can be created relative to the project root
-            # Assuming .env is in the root, this path is relative to root
             path = Path(v)
             if not path.is_absolute():
                 base_dir = Path(__file__).resolve().parent.parent.parent
                 path = base_dir / v
             # Ensure parent directory exists
             path.parent.mkdir(parents=True, exist_ok=True)
-            return str(path.resolve()) # Return resolved absolute path string
-        return v # Return None if not local mode
+            return str(path.resolve())
+        return v
 
-    @validator('CHROMA_HOST', 'CHROMA_PORT', pre=True, always=True)
-    def validate_server_config(cls, v, values, field):
-        mode = values.get('CHROMA_MODE')
+    @field_validator('CHROMA_HOST', 'CHROMA_PORT')
+    @classmethod
+    def validate_server_config(cls, v, info):
+        mode = info.data.get('CHROMA_MODE')
+        field_name = info.field_name
         if mode in ('http', 'https') and not v:
-            raise ValueError(f"{field.name} must be set when CHROMA_MODE is '{mode}'")
+            raise ValueError(f"{field_name} must be set when CHROMA_MODE is '{mode}'")
         return v
 
     model_config = SettingsConfigDict(
