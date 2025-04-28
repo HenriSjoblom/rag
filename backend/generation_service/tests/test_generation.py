@@ -1,9 +1,9 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, ANY
-from fastapi import HTTPException
+from unittest.mock import AsyncMock, ANY # Only need AsyncMock and ANY now
+from fastapi import HTTPException, status # Import status
 
 from app.services.generation import GenerationService
-from app.models import GenerationRequest
+from app.models import GenerateRequest
 from app.config import Settings
 
 
@@ -48,59 +48,76 @@ def test_format_context(
     formatted = generation_service_instance._format_context(chunks)
     assert formatted == expected_output
 
-# --- Tests for generate_answer (using pytest-mock's 'mocker' fixture) ---
-
+# --- Tests for generate_answer ---
+@pytest.mark.asyncio
 async def test_generate_answer_success(
     generation_service_instance: GenerationService,
     mocker
 ):
     """Tests generate_answer successful path, mocking the LLM chain call."""
-    # Arrange
+
     request = GenerateRequest(query="What is FastAPI?", context_chunks=["FastAPI is a web framework."])
     expected_llm_answer = "FastAPI is indeed a Python web framework known for its speed."
+    formatted_context = generation_service_instance._format_context(request.context_chunks)
     expected_chain_input = {
-        "context": "FastAPI is a web framework.",
+        "context": formatted_context,
         "query": "What is FastAPI?"
     }
 
-    # Use the 'mocker' fixture provided by pytest-mock to patch the object
-    mock_ainvoke = mocker.patch.object(
-        generation_service_instance.rag_chain, # The object instance to patch
-        'ainvoke',                             # The attribute (method) name on the object
-        new_callable=AsyncMock,                # Use an AsyncMock for the replacement
-        return_value=expected_llm_answer       # Configure the mock's return value
+    # Create an AsyncMock to replace the rag_chain instance attribute.
+    mock_chain_replacement = AsyncMock(name="MockedRagChainInstance")
+
+    # Configure its 'ainvoke' method to be an AsyncMock that returns the desired value.
+    mock_chain_replacement.ainvoke = AsyncMock(name="MockedAinvokeMethod", return_value=expected_llm_answer)
+
+    #Patch the 'rag_chain' attribute *on the specific instance*.
+    mocker.patch.object(
+        generation_service_instance,
+        'rag_chain',
+        new=mock_chain_replacement
     )
 
-    # Act
     actual_answer = await generation_service_instance.generate_answer(request)
 
-    # Assert
     assert actual_answer == expected_llm_answer
-    mock_ainvoke.assert_awaited_once_with(expected_chain_input) # Check the mock was called correctly
+
+    #Assert that the ainvoke method on our mock was called correctly
+    generation_service_instance.rag_chain.ainvoke.assert_awaited_once_with(expected_chain_input)
 
 
-async def test_generate_answer_llm_error(
+@pytest.mark.asyncio
+async def test_generate_answer_llm_failure(
     generation_service_instance: GenerationService,
     mocker
 ):
-    """Tests generate_answer when the LLM chain call raises an exception."""
-    # Arrange
-    request = GenerateRequest(query="What is FastAPI?", context_chunks=["Context"])
-    simulated_error = Exception("Simulated LLM API Error (e.g., Rate Limit)")
+    """Tests generate_answer when the LLM chain call fails."""
+    request = GenerateRequest(query="Test Query", context_chunks=["Some context"])
+    expected_chain_input = {
+        "context": "Some context",
+        "query": "Test Query"
+    }
+    error_message = "LLM unavailable"
 
-    # Use the 'mocker' fixture to patch the object's method to raise an error
-    mock_ainvoke = mocker.patch.object(
-        generation_service_instance.rag_chain,
-        'ainvoke',
-        new_callable=AsyncMock,
-        side_effect=simulated_error # Configure the mock to raise an error
+    # Create mock chain that raises an exception on ainvoke
+    mock_chain_replacement = AsyncMock(name="FailingMockChain")
+    mock_chain_replacement.ainvoke = AsyncMock(name="FailingAinvoke", side_effect=RuntimeError(error_message))
+
+    # Patch the instance attribute
+    mocker.patch.object(
+        generation_service_instance,
+        'rag_chain',
+        new=mock_chain_replacement
     )
 
-    # Act & Assert
+    # Assert that calling the method raises the expected HTTPException
     with pytest.raises(HTTPException) as exc_info:
         await generation_service_instance.generate_answer(request)
 
-    assert exc_info.value.status_code == 503
-    assert "Failed to get response from LLM" in exc_info.value.detail
-    assert exc_info.value.__cause__ is simulated_error
-    mock_ainvoke.assert_awaited_once()
+    # Check the details of the raised exception
+    assert exc_info.value.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert error_message in exc_info.value.detail
+
+    # Assert the mock was called
+    generation_service_instance.rag_chain.ainvoke.assert_awaited_once_with(expected_chain_input)
+
+

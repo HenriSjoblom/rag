@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 import logging
 
-from app.routers import generate as generate_router
+from app.routers import router
 from app.config import settings
 
 # Configure basic logging
@@ -15,7 +15,7 @@ app = FastAPI(
 )
 
 # Include API routers
-app.include_router(generate_router.router, prefix="/api/v1")
+app.include_router(router, prefix="/api/v1")
 
 @app.get("/health", tags=["Health"])
 async def health_check():
