@@ -21,12 +21,11 @@ async def handle_generation_request(
     Handles incoming requests to generate a response.
     """
     try:
-        # Call the generation service's method
         answer = await gen_service.generate_answer(request)
-        # Return the answer in the expected response format
         return GenerateResponse(answer=answer)
     except HTTPException as e:
         # Re-raise HTTPExceptions raised by the service layer (e.g., LLM unavailable)
+        print(f"HTTPException in generation endpoint: {e.detail}")
         raise e
     except Exception as e:
         # Catch any other unexpected errors during processing

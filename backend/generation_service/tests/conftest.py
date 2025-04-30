@@ -2,15 +2,15 @@
 import pytest
 import pytest_asyncio
 from typing import Generator, AsyncGenerator
-from unittest.mock import AsyncMock # Use AsyncMock for async methods
+# Import both MagicMock and AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.main import app as fastapi_app # Import your FastAPI app instance
+from app.main import app as fastapi_app
 from app.config import Settings
-from app.deps import get_settings, get_generation_service # Import dependency getters
-from app.services.generation import GenerationService
+from app.deps import get_settings, get_generation_service
 
 # -- Settings Override --
 
@@ -28,56 +28,44 @@ def override_settings() -> Settings:
 
 # -- Mock Service Fixture (for Integration Tests) --
 
-@pytest.fixture(scope="function") # Function scope if mock behavior changes per test
-def mock_rag_chain_invoke() -> AsyncMock:
-    """Provides a reusable AsyncMock for the rag_chain.ainvoke method."""
-    return AsyncMock()
-
 @pytest.fixture(scope="function")
-def mock_generation_service(
-    override_settings: Settings,
-    mock_rag_chain_invoke: AsyncMock # Inject the invoke mock
-) -> GenerationService:
+def mock_generation_service() -> MagicMock: # Change return type hint to MagicMock
     """
-    Creates a mock GenerationService instance where the actual LLM call
-    (rag_chain.ainvoke) is replaced with an AsyncMock.
+    Creates a mock GenerationService object (using MagicMock shell)
+    suitable for dependency injection in integration tests.
+    It mimics the necessary async methods like 'generate_answer'.
     """
-    # We initialize a real service to get prompt templates etc.
-    # but then patch the critical chain invoke method.
-    service_instance = GenerationService(settings=override_settings)
-    # Replace the invoke method with our mock
-    service_instance.rag_chain.ainvoke = mock_rag_chain_invoke
-    print("Created Mock GenerationService with patched rag_chain.ainvoke")
-    return service_instance
+    # Use MagicMock as the main container for the service mock
+    mock_service = MagicMock(name="MockGenerationService")
+
+    # Attach an AsyncMock specifically for the async 'generate_answer' method
+    mock_service.generate_answer = AsyncMock(name="MockGenerateAnswerMethod")
+
+    print("Created mock GenerationService object (MagicMock with AsyncMock method).")
+    return mock_service
 
 # -- Integration Test Fixtures --
-
-@pytest_asyncio.fixture(scope="function") # Function scope for clean state
+@pytest_asyncio.fixture(scope="function")
 async def test_app(
     override_settings: Settings,
-    mock_generation_service: GenerationService # Use the mock service fixture
+    mock_generation_service: MagicMock # Update type hint here too
 ) -> AsyncGenerator[FastAPI, None]:
     """
     Creates a test FastAPI app instance with overridden dependencies.
     Injects the mock_generation_service.
     """
-    # Override dependencies
     fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
-    # Override the dependency that provides the GenerationService
+    # Inject the MagicMock object (which has an AsyncMock 'generate_answer' method)
     fastapi_app.dependency_overrides[get_generation_service] = lambda: mock_generation_service
 
-    # Note: Lifespan isn't strictly needed here as LLM client init is part of
-    # GenerationService, which we are mocking/controlling via fixtures.
-    # If main.py had a lifespan, you might need `async with TestClient(...)` approach.
-    print("Test App created with overridden dependencies.")
+    print("Test App created with overridden dependencies (using mock GenerationService).")
     yield fastapi_app
 
-    # Cleanup: Clear overrides after tests using this fixture are done
     fastapi_app.dependency_overrides = {}
     print("Test App dependency overrides cleared.")
 
 
-@pytest.fixture(scope="function") # Function scope for test client
+@pytest.fixture(scope="function")
 def client(test_app: FastAPI) -> Generator[TestClient, None, None]:
     """Creates a FastAPI TestClient instance for making requests."""
     with TestClient(test_app) as test_client:

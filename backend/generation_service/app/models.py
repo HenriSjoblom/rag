@@ -4,7 +4,10 @@ from typing import List
 
 class GenerateRequest(BaseModel):
     """Request model for generating an answer."""
-    query: str = Field(..., description="The original user query.")
+    query: str = Field(
+        ...,
+        min_length=1, # Ensures the string is not empty.
+        description="The original user query.")
     context_chunks: List[str] = Field(..., description="List of relevant context chunks retrieved from the vector database.")
 
 
