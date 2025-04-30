@@ -1,29 +1,23 @@
-# tests/conftest.py
 import pytest
-import pytest_asyncio  # Import for async fixtures
+import pytest_asyncio
 import shutil
 from pathlib import Path
 import uuid
-from typing import Generator, AsyncGenerator, List # Import List
+from typing import Generator, AsyncGenerator, List
 
-# --- Mock Objects ---
 from unittest.mock import MagicMock, AsyncMock
 from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb import Collection
-from chromadb.api.models.Collection import Collection as ChromaCollectionModel # Type hint fix
+from chromadb.api.models.Collection import Collection as ChromaCollectionModel
 
-# --- FastAPI Testing ---
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
 
-# --- Application Imports ---
-# Important: Adjust the path if your tests directory is structured differently
-# This assumes 'tests' is at the same level as 'app'
-from app.main import app as fastapi_app # Import your FastAPI app instance
-from app.core.config import Settings, settings as app_settings
-from app.api.deps import get_settings # Import dependency getter for overriding
+from app.main import app as fastapi_app
+from app.config import Settings, settings as app_settings
+from app.deps import get_settings
 from app.services.vector_search import (
     get_embedding_model,
     get_chroma_collection,
@@ -31,7 +25,6 @@ from app.services.vector_search import (
 )
 
 # -- Fixture Configuration --
-
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:
     """Creates a temporary directory for test data (like ChromaDB)."""
@@ -56,7 +49,6 @@ def test_collection_name() -> str:
     return f"test_collection_{uuid.uuid4().hex[:8]}"
 
 # -- Settings Override --
-
 @pytest.fixture(scope="session")
 def override_settings(test_chroma_path: str, test_collection_name: str) -> Settings:
     """Creates a Settings instance specifically for testing."""
@@ -73,7 +65,6 @@ def override_settings(test_chroma_path: str, test_collection_name: str) -> Setti
     )
 
 # -- Mock Fixtures (for Unit Tests) --
-
 @pytest.fixture
 def mock_embedding_model() -> MagicMock:
     """Provides a mock SentenceTransformer model."""
@@ -96,7 +87,7 @@ def mock_embedding_model() -> MagicMock:
 @pytest.fixture
 def mock_chroma_collection() -> AsyncMock:
     """Provides a mock ChromaDB Collection object."""
-    mock_collection = AsyncMock(spec=ChromaCollectionModel) # Use the correct type hint
+    mock_collection = AsyncMock(spec=ChromaCollectionModel)
     mock_collection.name = "mock_collection"
 
     # Simulate the query method - make it async if your service awaits it
@@ -121,7 +112,6 @@ def mock_chroma_collection() -> AsyncMock:
 
 
 # -- Integration Test Fixtures --
-
 @pytest_asyncio.fixture(scope="session") # Use async fixture for session scope with async setup
 async def test_app(override_settings: Settings) -> AsyncGenerator[FastAPI, None]:
     """Creates a test FastAPI app instance with overridden settings and lifespan."""

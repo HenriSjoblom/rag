@@ -9,6 +9,7 @@ dependencies = [
     "fastapi[standard]>=0.115.6",
     "pydantic>=2.10.5",
     "pydantic-settings>=2.7.1",
+    "sentence-transformers>=4.1.0",
 ]
 
 [dependency-groups]
