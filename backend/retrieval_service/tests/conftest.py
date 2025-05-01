@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 import uuid
 from typing import Generator, AsyncGenerator, List
+import tempfile
 
 from unittest.mock import MagicMock, AsyncMock
 from sentence_transformers import SentenceTransformer
@@ -50,19 +51,29 @@ def test_collection_name() -> str:
 
 # -- Settings Override --
 @pytest.fixture(scope="session")
-def override_settings(test_chroma_path: str, test_collection_name: str) -> Settings:
-    """Creates a Settings instance specifically for testing."""
-    # Override settings to use test paths and potentially different models/config
-    return Settings(
-        EMBEDDING_MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2", # Use a real (small) model for integration tests
-        TOP_K_RESULTS=3,
+def override_settings(test_chroma_path: str, test_collection_name: str) -> Settings: # Add dependencies
+    """Creates a Settings instance for testing using individual fields."""
+    print(f"Using temporary ChromaDB path for testing: {test_chroma_path}")
+    print(f"Using test collection name: {test_collection_name}")
+
+    # Instantiate Settings using the fields defined in app/config.py
+    settings = Settings(
+        EMBEDDING_MODEL_NAME="all-MiniLM-L6-v2", # Or your test model
+        TOP_K_RESULTS=3, # Use the correct field name from config.py
+        # --- Provide individual Chroma fields ---
         CHROMA_MODE="local",
-        CHROMA_LOCAL_PATH=test_chroma_path, # Use the temp path
-        CHROMA_COLLECTION_NAME=test_collection_name,
-        # CHROMA_HOST=None, # Ensure server settings are None for local mode
-        # CHROMA_PORT=None,
-        # Override other settings if necessary
+        CHROMA_LOCAL_PATH=test_chroma_path, # Use the path from the fixture
+        CHROMA_COLLECTION_NAME=test_collection_name, # Use the name from the fixture
+        CHROMA_HOST=None, # Explicitly None for local mode
+        CHROMA_PORT=None, # Explicitly None for local mode
+        # --- End of Chroma fields ---
+        # Add any other required fields from your Settings model
     )
+    # Pydantic v2 runs validators on instantiation, so path should be resolved now
+
+    yield settings # Provide settings to tests
+
+    # No specific cleanup needed here as test_data_dir handles directory removal
 
 # -- Mock Fixtures (for Unit Tests) --
 @pytest.fixture
@@ -106,25 +117,47 @@ def mock_chroma_collection() -> AsyncMock:
     return mock_collection
 
 # -- Integration Test Fixtures --
-@pytest_asyncio.fixture(scope="session") # Use async fixture for session scope with async setup
+@pytest_asyncio.fixture(scope="session")
 async def test_app(override_settings: Settings) -> AsyncGenerator[FastAPI, None]:
-    """Creates a test FastAPI app instance with overridden settings and lifespan."""
-
-    # Override the settings dependency for the entire test app session
+    """
+    Creates a test FastAPI app instance for the session, applies overrides,
+    and manages the app's lifespan context.
+    """
+    print("Setting up test_app fixture (session scope)...")
+    # Store original overrides to restore later
+    original_overrides = fastapi_app.dependency_overrides.copy()
     fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
+    print("Applied settings override.")
 
-    # Manually run lifespan startup events
-    async with httpx.AsyncClient(app=fastapi_app, base_url="http://test") as client:
-        # The lifespan context manager from the app should handle startup
-        # No need to manually call startup here if lifespan is set correctly
-        print("Test App Lifespan Startup completed (via lifespan manager).")
-        yield fastapi_app # Provide the app instance to tests
-        # Lifespan shutdown should be handled automatically on context exit
-        print("Test App Lifespan Shutdown completed (via lifespan manager).")
+    # Pass the correct settings to the lifespan manager
+    model_name = override_settings.EMBEDDING_MODEL_NAME
+    # --- FIX: Use the computed property ---
+    chroma_settings_dict = override_settings.chroma_client_settings
+    # --- End of fix ---
+    collection_name = override_settings.CHROMA_COLLECTION_NAME
 
-    # Clear overrides after session
-    fastapi_app.dependency_overrides = {}
+    # Ensure lifespan_retrieval_service exists and is callable
+    from app.services.vector_search import lifespan_retrieval_service # Ensure import
 
+    lifespan_manager = lifespan_retrieval_service(
+        app=fastapi_app, # Pass the app instance if needed by lifespan
+        model_name=model_name,
+        chroma_settings=chroma_settings_dict, # Pass the generated dict
+        collection_name=collection_name
+    )
+
+    try:
+        print("Manually entering lifespan context...")
+        async with lifespan_manager:
+             print("Lifespan startup completed.")
+             yield fastapi_app # App is ready with lifespan started
+             print("Lifespan shutdown will run upon exiting context.")
+        print("Lifespan context exited.")
+
+    finally:
+        print("Tearing down test_app fixture (session scope)...")
+        fastapi_app.dependency_overrides = original_overrides
+        print("Restored original dependency overrides.")
 
 @pytest_asyncio.fixture(scope="session") # Depends on test_app to ensure lifespan runs
 async def populated_chroma_collection(test_app: FastAPI) -> AsyncGenerator[Collection, None]:

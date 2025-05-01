@@ -47,10 +47,11 @@ async def lifespan_retrieval_service(app, model_name: str, chroma_settings: Dict
     # Connect to ChromaDB
     logger.info(f"Connecting to ChromaDB ({chroma_settings})...")
     try:
+        print("Trying to connect to ChromaDB...")
         _chroma_client = chromadb.Client(ChromaSettings(**chroma_settings))
         # Ping to check connection (useful for server mode)
         # _chroma_client.heartbeat() # Not needed for local mode primarily
-
+        print("ChromaDB connection successful.")
         logger.info(f"Getting or creating ChromaDB collection: {collection_name}...")
         # Get embedding function compatible with ChromaDB if needed
         # chroma_ef = chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction(model_name=model_name)
