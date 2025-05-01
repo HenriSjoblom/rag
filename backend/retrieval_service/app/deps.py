@@ -2,6 +2,7 @@ from fastapi import Depends
 import chromadb
 from sentence_transformers import SentenceTransformer
 
+from app.config import Settings, settings as global_settings
 from app.services.vector_search import (
     VectorSearchService,
     get_embedding_model,

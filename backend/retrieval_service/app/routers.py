@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 
-from app.models.retrieval import RetrievalRequest, RetrievalResponse
+from app.models import RetrievalRequest, RetrievalResponse
 from app.services.vector_search import VectorSearchService
-from app.api.deps import get_vector_search_service
+from app.deps import get_vector_search_service
 
 router = APIRouter()
 

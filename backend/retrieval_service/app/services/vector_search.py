@@ -121,7 +121,7 @@ class VectorSearchService:
 
         logger.info(f"Querying ChromaDB collection '{self.chroma_collection.name}' for top {self.top_k} results...")
         try:
-            results = self.chroma_collection.query(
+            results = await self.chroma_collection.query(
                 query_embeddings=[query_embedding], # Chroma expects a list of embeddings
                 n_results=self.top_k,
                 include=['documents'] # We only need the document text content
@@ -129,8 +129,7 @@ class VectorSearchService:
             logger.info(f"ChromaDB query successful. Found results: {results}")
 
             # Extract the document texts from the results
-            # Results is a dict like {'ids': [[]], 'embeddings': None, 'documents': [['chunk1', 'chunk2']], 'metadatas': [[]], 'distances': [[]]}
-            # We need the first list inside 'documents'
+            # Results should now be a dictionary
             retrieved_docs = results.get('documents', [[]])[0]
             if not retrieved_docs:
                  logger.warning("No documents found in ChromaDB for the query.")

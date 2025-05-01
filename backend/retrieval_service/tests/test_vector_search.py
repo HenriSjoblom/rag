@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, AsyncMock, ANY # Import ANY
 from fastapi import HTTPException
 
 from app.services.vector_search import VectorSearchService
-from app.models.retrieval import RetrievalResponse # Import the response model
+from app.models import RetrievalResponse # Import the response model
 
 
 # Mark all tests in this module as async using pytest-asyncio
@@ -17,11 +17,11 @@ async def test_embed_query(mock_embedding_model: MagicMock):
         top_k=3
     )
     query = "test query"
-    embedding = service._embed_query(query)
+    embedding_list = service._embed_query(query)
 
     mock_embedding_model.encode.assert_called_once_with(query, convert_to_numpy=True)
-    assert isinstance(embedding, list)
-    assert len(embedding) == 384 # Check dimension based on mock encode output
+    assert isinstance(embedding_list, list)
+    assert len(embedding_list[0]) == 384 # Check dimension based on mock encode output
 
 
 async def test_search_found(mock_embedding_model: MagicMock, mock_chroma_collection: AsyncMock):
@@ -57,14 +57,23 @@ async def test_search_not_found(mock_embedding_model: MagicMock, mock_chroma_col
         top_k=3
     )
     query = "find nothing"
-    # Make encode return something that leads to no results in the mock query
-    mock_embedding_model.encode.return_value.tolist.return_value = [[1.0] * 384] # Simulate different embedding
+
+    # Simulate ChromaDB returning an empty result set
+    empty_chroma_result = {
+        'ids': [[]],
+        'embeddings': None,
+        'documents': [[]], # Empty inner list indicates no documents found
+        'metadatas': [[]],
+        'distances': [[]]
+    }
+    mock_chroma_collection.query.return_value = empty_chroma_result
 
     results = await service.search(query)
 
     mock_embedding_model.encode.assert_called_once_with(query, convert_to_numpy=True)
     mock_chroma_collection.query.assert_awaited_once() # Check it was awaited
-    assert results == [] # Expect empty list
+    # The service should process {'documents': [[]]} and return []
+    assert results == []
 
 
 async def test_search_chroma_error(mock_embedding_model: MagicMock, mock_chroma_collection: AsyncMock):

@@ -67,49 +67,43 @@ def override_settings(test_chroma_path: str, test_collection_name: str) -> Setti
 # -- Mock Fixtures (for Unit Tests) --
 @pytest.fixture
 def mock_embedding_model() -> MagicMock:
-    """Provides a mock SentenceTransformer model."""
+    """Provides a mock SentenceTransformer model for unit tests."""
+    # Create a mock with the spec of the real class for better type hinting/attribute checking
     mock_model = MagicMock(spec=SentenceTransformer)
-    # Simulate the encode method's behavior
-    def _mock_encode(texts, convert_to_numpy=False):
-        # Return dummy embeddings (list of lists)
-        # Ensure the dimension matches what your Chroma setup might expect,
-        # or keep it simple if Chroma is also mocked.
-        # Dimension for all-MiniLM-L6-v2 is 384
-        if isinstance(texts, str):
-             num_texts = 1
-        else:
-             num_texts = len(texts)
-        embeddings = [[float(i) for i in range(384)] for _ in range(num_texts)]
-        return embeddings if not convert_to_numpy else MagicMock(tolist=lambda: embeddings) # Simulate tolist() if needed
-    mock_model.encode.side_effect = _mock_encode
+
+    # Mock the object that the 'encode' method should return
+    mock_encode_result = MagicMock(name="EncodeResultMock")
+    # Set the 'ndim' attribute that the code checks
+    mock_encode_result.ndim = 1 # Simulate a 1D array by default
+    # Set a default return value for the 'tolist' method called later
+    # Chroma expects a list of lists, even for a single embedding
+    mock_encode_result.tolist.return_value = [[0.0] * 384] # Example 384-dim embedding
+
+    # Configure the 'encode' method on the main mock to return our prepared result mock
+    mock_model.encode.return_value = mock_encode_result
+
     return mock_model
 
 @pytest.fixture
 def mock_chroma_collection() -> AsyncMock:
-    """Provides a mock ChromaDB Collection object."""
-    mock_collection = AsyncMock(spec=ChromaCollectionModel)
-    mock_collection.name = "mock_collection"
+    """Provides a mock ChromaDB Collection object for unit tests."""
+    # Use AsyncMock because the service awaits collection.query
+    mock_collection = AsyncMock(spec=chromadb.Collection)
+    mock_collection.name = "mock_collection" # Add name attribute used in logging
+    mock_collection.query = AsyncMock(name="MockQueryMethod")
 
-    # Simulate the query method - make it async if your service awaits it
-    # Even if the underlying library isn't async, mocking it as async
-    # is fine if the calling code uses `await`.
-    async def _mock_query(query_embeddings: List[List[float]], n_results: int, include: List[str]):
-        print(f"Mock Chroma query called with {len(query_embeddings)} embedding(s), n_results={n_results}")
-        # Simulate finding some results
-        if query_embeddings[0][0] == 0.0: # Example condition based on dummy embedding
-            return {
-                'ids': [['id1', 'id2']],
-                'embeddings': None,
-                'documents': [['mock chunk 1', 'mock chunk 2']],
-                'metadatas': [[{'source': 'docA'}, {'source': 'docB'}]],
-                'distances': [[0.1, 0.2]]
-            }
-        else: # Simulate finding nothing
-             return {'ids': [[]], 'embeddings': None, 'documents': [[]], 'metadatas': [[]], 'distances': [[]]}
+    # Default query result simulating found documents
+    default_query_result = {
+        'ids': [['doc_id_1', 'doc_id_2']],
+        'embeddings': None,
+        'documents': [['mock chunk 1', 'mock chunk 2']],
+        'metadatas': [[{'source': 'mock'}, {'source': 'mock'}]],
+        'distances': [[0.1, 0.2]]
+    }
+    # Configure the query method's default return value
+    mock_collection.query.return_value = default_query_result
 
-    mock_collection.query = _mock_query # Assign the async mock function
     return mock_collection
-
 
 # -- Integration Test Fixtures --
 @pytest_asyncio.fixture(scope="session") # Use async fixture for session scope with async setup
