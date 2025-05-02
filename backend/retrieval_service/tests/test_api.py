@@ -7,16 +7,17 @@ from app.models import RetrievalResponse
 
 # Mark all tests in this module as needing the session-scoped populated collection
 pytestmark = [
-    pytest.mark.usefixtures("populated_chroma_collection"),
-    pytest.mark.asyncio # Needed if test functions themselves are async, though TestClient is sync
+    pytest.mark.usefixtures("populated_chroma_collection", "client"),
+    pytest.mark.asyncio
 ]
 
 
 def test_retrieve_success_apples(client: TestClient):
     """Test successful retrieval using the API endpoint."""
+    print("Testing retrieval for apples...")
     request_data = {"query": "Tell me about apples"}
     response = client.post("/api/v1/retrieve", json=request_data)
-
+    print(f"Response: {response.json()}") # Debugging output
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
     # Validate response format using the Pydantic model

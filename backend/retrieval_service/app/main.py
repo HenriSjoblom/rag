@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import logging
 
 from app.routers import router as retrieve_router
-from app.config import settings
+from app.deps import get_settings
 from app.services.vector_search import lifespan_retrieval_service
 
 # Configure logging
@@ -17,26 +17,14 @@ async def lifespan(app: FastAPI):
     FastAPI lifespan manager to load model and connect to DB on startup,
     and clean up on shutdown.
     """
+    settings = get_settings()
+    print(f"ChromaDB path: {settings.CHROMA_PATH}")
     logger.info("Retrieval service lifespan startup...")
-    # Prepare ChromaDB settings based on mode
-    chroma_config = {
-        "chroma_db_impl": "duckdb+parquet", # Default, suitable for local
-        "persist_directory": settings.CHROMA_LOCAL_PATH if settings.CHROMA_MODE == 'local' else None,
-        # For server mode:
-        "chroma_api_impl": "rest" if settings.CHROMA_MODE in ('http', 'https') else None,
-        "chroma_server_host": settings.CHROMA_HOST if settings.CHROMA_MODE in ('http', 'https') else None,
-        "chroma_server_http_port": settings.CHROMA_PORT if settings.CHROMA_MODE == 'http' else None,
-        "chroma_server_https_port": settings.CHROMA_PORT if settings.CHROMA_MODE == 'https' else None,
-        # Add other relevant ChromaSettings here if needed (e.g., auth, ssl)
-    }
-    # Filter out None values from chroma_config before passing to ChromaSettings
-    chroma_settings_dict = {k: v for k, v in chroma_config.items() if v is not None}
-
     # Use the async context manager from vector_search service
     async with lifespan_retrieval_service(
-        app,
+        app=app,
         model_name=settings.EMBEDDING_MODEL_NAME,
-        chroma_settings=chroma_settings_dict,
+        chroma_path=settings.CHROMA_PATH,
         collection_name=settings.CHROMA_COLLECTION_NAME
     ):
         logger.info("Retrieval service startup complete. Model and DB connection ready.")

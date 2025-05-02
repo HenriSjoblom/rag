@@ -21,6 +21,7 @@ async def retrieve_chunks(
     """
     Handles incoming requests to retrieve relevant document chunks.
     """
+    print(f"Router using collection: '{search_service.chroma_collection.name}'")
     try:
         # Perform the search using the injected service
         retrieved_chunks = await search_service.search(query=request.query)

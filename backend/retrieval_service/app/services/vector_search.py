@@ -1,4 +1,3 @@
-# app/services/vector_search.py
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 from sentence_transformers import SentenceTransformer
@@ -6,7 +5,8 @@ from typing import List, Optional, Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import HTTPException, status
 import numpy as np
-import logging # Import logging
+import logging
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,10 +31,13 @@ async def get_chroma_collection() -> chromadb.Collection:
     return _chroma_collection
 
 @asynccontextmanager
-async def lifespan_retrieval_service(app, model_name: str, chroma_settings: Dict[str, Any], collection_name: str):
+async def lifespan_retrieval_service(app, model_name: str, chroma_path: str, collection_name: str):
     """Manages the lifespan of embedding model and ChromaDB client."""
     global _embedding_model, _chroma_client, _chroma_collection
     # Load Model
+    print("Loading embedding model...")
+    print(f"Collection name: {collection_name}")
+    print(f"ChromaDB path: {chroma_path}")
     logger.info(f"Loading embedding model: {model_name}...")
     try:
         _embedding_model = SentenceTransformer(model_name)
@@ -45,39 +48,38 @@ async def lifespan_retrieval_service(app, model_name: str, chroma_settings: Dict
         raise RuntimeError(f"Failed to load embedding model: {e}") from e
 
     # Connect to ChromaDB
-    logger.info(f"Connecting to ChromaDB ({chroma_settings})...")
     try:
         print("Trying to connect to ChromaDB...")
-        _chroma_client = chromadb.Client(ChromaSettings(**chroma_settings))
-        # Ping to check connection (useful for server mode)
-        # _chroma_client.heartbeat() # Not needed for local mode primarily
+        _chroma_client = chromadb.PersistentClient(path=chroma_path, settings=ChromaSettings(allow_reset=True))
+
         print("ChromaDB connection successful.")
         logger.info(f"Getting or creating ChromaDB collection: {collection_name}...")
-        # Get embedding function compatible with ChromaDB if needed
-        # chroma_ef = chromadb.utils.embedding_functions.SentenceTransformerEmbeddingFunction(model_name=model_name)
-        # _chroma_collection = _chroma_client.get_or_create_collection(
-        #     name=collection_name,
-        #     embedding_function=chroma_ef # Let Chroma handle embeddings internally (alternative)
-        # )
-        # --- OR ---
-        # Manage embeddings manually (gives more control, used in search below)
         _chroma_collection = _chroma_client.get_or_create_collection(name=collection_name)
         logger.info(f"ChromaDB collection '{collection_name}' ready.")
 
     except Exception as e:
         logger.error(f"Failed to connect to or setup ChromaDB: {e}", exc_info=True)
-        _chroma_client = None # Ensure client is None if connection failed
+        _chroma_client = None
         _chroma_collection = None
         raise RuntimeError(f"Failed to initialize ChromaDB: {e}") from e
 
     try:
         yield # Application runs
     finally:
-        # Cleanup (optional for ChromaDB local client, good practice)
+        # Cleanup
         logger.info("Shutting down retrieval service resources...")
+        if _chroma_client:
+            try:
+                print("Resetting ChromaDB client...")
+                _chroma_client.reset() # This should release file locks
+                print("ChromaDB client reset successfully.")
+                logger.info("ChromaDB client reset.")
+                time.sleep(5.5)
+            except Exception as e:
+                print(f"Error resetting ChromaDB client: {e}")
+                logger.error(f"Error resetting ChromaDB client: {e}", exc_info=True)
+
         _embedding_model = None # Allow garbage collection
-        # No explicit close needed for default local Chroma client usually
-        # If using HTTP client mode, you might want cleanup steps
         _chroma_client = None
         _chroma_collection = None
         logger.info("Retrieval service resources released.")
@@ -117,12 +119,13 @@ class VectorSearchService:
         Returns:
             A list of relevant document chunk texts.
         """
+        logger.info(f"Search service using collection: '{self.chroma_collection.name}'")
         logger.info(f"Embedding query: '{query[:50]}...'")
         query_embedding = self._embed_query(query)
 
         logger.info(f"Querying ChromaDB collection '{self.chroma_collection.name}' for top {self.top_k} results...")
         try:
-            results = await self.chroma_collection.query(
+            results = self.chroma_collection.query(
                 query_embeddings=[query_embedding], # Chroma expects a list of embeddings
                 n_results=self.top_k,
                 include=['documents'] # We only need the document text content

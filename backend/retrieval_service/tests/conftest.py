@@ -18,17 +18,18 @@ import httpx
 
 from app.main import app as fastapi_app
 from app.config import Settings, settings as app_settings
-from app.deps import get_settings
+from app.deps import get_settings, get_vector_search_service
 from app.services.vector_search import (
     get_embedding_model,
     get_chroma_collection,
-    VectorSearchService
+    VectorSearchService,
+    lifespan_retrieval_service
 )
 
 # -- Fixture Configuration --
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:
-    """Creates a temporary directory for test data (like ChromaDB)."""
+    """Creates a temporary directory for test data."""
     path = Path("./test_temp_data")
     if path.exists():
         shutil.rmtree(path) # Clean up from previous runs
@@ -53,27 +54,16 @@ def test_collection_name() -> str:
 @pytest.fixture(scope="session")
 def override_settings(test_chroma_path: str, test_collection_name: str) -> Settings: # Add dependencies
     """Creates a Settings instance for testing using individual fields."""
-    print(f"Using temporary ChromaDB path for testing: {test_chroma_path}")
-    print(f"Using test collection name: {test_collection_name}")
 
     # Instantiate Settings using the fields defined in app/config.py
     settings = Settings(
-        EMBEDDING_MODEL_NAME="all-MiniLM-L6-v2", # Or your test model
+        EMBEDDING_MODEL_NAME="all-MiniLM-L6-v2",
+        CHROMA_COLLECTION_NAME=test_collection_name,
+        CHROMA_PATH=test_chroma_path,
         TOP_K_RESULTS=3, # Use the correct field name from config.py
-        # --- Provide individual Chroma fields ---
-        CHROMA_MODE="local",
-        CHROMA_LOCAL_PATH=test_chroma_path, # Use the path from the fixture
-        CHROMA_COLLECTION_NAME=test_collection_name, # Use the name from the fixture
-        CHROMA_HOST=None, # Explicitly None for local mode
-        CHROMA_PORT=None, # Explicitly None for local mode
-        # --- End of Chroma fields ---
-        # Add any other required fields from your Settings model
     )
-    # Pydantic v2 runs validators on instantiation, so path should be resolved now
 
-    yield settings # Provide settings to tests
-
-    # No specific cleanup needed here as test_data_dir handles directory removal
+    yield settings
 
 # -- Mock Fixtures (for Unit Tests) --
 @pytest.fixture
@@ -87,7 +77,6 @@ def mock_embedding_model() -> MagicMock:
     # Set the 'ndim' attribute that the code checks
     mock_encode_result.ndim = 1 # Simulate a 1D array by default
     # Set a default return value for the 'tolist' method called later
-    # Chroma expects a list of lists, even for a single embedding
     mock_encode_result.tolist.return_value = [[0.0] * 384] # Example 384-dim embedding
 
     # Configure the 'encode' method on the main mock to return our prepared result mock
@@ -129,89 +118,103 @@ async def test_app(override_settings: Settings) -> AsyncGenerator[FastAPI, None]
     fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
     print("Applied settings override.")
 
-    # Pass the correct settings to the lifespan manager
-    model_name = override_settings.EMBEDDING_MODEL_NAME
-    # --- FIX: Use the computed property ---
-    chroma_settings_dict = override_settings.chroma_client_settings
-    # --- End of fix ---
-    collection_name = override_settings.CHROMA_COLLECTION_NAME
-
-    # Ensure lifespan_retrieval_service exists and is callable
-    from app.services.vector_search import lifespan_retrieval_service # Ensure import
-
+    # Manually create and run the lifespan manager
     lifespan_manager = lifespan_retrieval_service(
-        app=fastapi_app, # Pass the app instance if needed by lifespan
-        model_name=model_name,
-        chroma_settings=chroma_settings_dict, # Pass the generated dict
-        collection_name=collection_name
+        app=fastapi_app,
+        model_name=override_settings.EMBEDDING_MODEL_NAME,
+        chroma_path=override_settings.CHROMA_PATH, # Or chroma_settings dict
+        collection_name=override_settings.CHROMA_COLLECTION_NAME
     )
-
+    print("Created lifespan manager.")
     try:
-        print("Manually entering lifespan context...")
         async with lifespan_manager:
-             print("Lifespan startup completed.")
-             yield fastapi_app # App is ready with lifespan started
-             print("Lifespan shutdown will run upon exiting context.")
-        print("Lifespan context exited.")
-
+            yield fastapi_app
     finally:
         print("Tearing down test_app fixture (session scope)...")
         fastapi_app.dependency_overrides = original_overrides
         print("Restored original dependency overrides.")
 
-@pytest_asyncio.fixture(scope="session") # Depends on test_app to ensure lifespan runs
-async def populated_chroma_collection(test_app: FastAPI) -> AsyncGenerator[Collection, None]:
+@pytest_asyncio.fixture(scope="function") # Depends on test_app to ensure lifespan runs
+async def populated_chroma_collection(test_app: FastAPI) -> AsyncGenerator[ChromaCollectionModel, None]:
     """
     Fixture to get the ChromaDB collection *after* the app's lifespan has
-    initialized it and populated it with some test data.
+    initialized it and populate it with some test data.
+    Depends on 'test_app' to ensure lifespan startup is complete.
     """
-    # Get the dependencies directly from the app's state or re-resolve them
-    # This assumes the lifespan correctly populates the global _embedding_model and _chroma_collection
-    # A more robust way might involve yielding the collection from the lifespan itself,
-    # but this works if lifespan modifies globals or app state accessible here.
-
-    # Let's retrieve the dependencies *after* startup via the dependency injectors
-    # We need an actual request context or similar to resolve dependencies usually,
-    # but since they are cached by lifespan, we can try accessing them via the getters
-    # (This might be slightly brittle depending on FastAPI internals/lifespan implementation)
-
+    print("Entering populated_chroma_collection fixture...")
     try:
+        # Retrieve the collection instance created during app lifespan
         collection = await get_chroma_collection()
-        model = await get_embedding_model()
-        print(f"Populating Chroma collection: {collection.name}")
+        print(f"Retrieved collection '{collection.name}' for population.")
+        # Retrieve the embedding model instance as well, needed for .add()
+        embedding_model = await get_embedding_model()
 
+        # Define test documents
         test_docs = {
             "doc_id_1": "This is the first test document about apples.",
             "doc_id_2": "This is a second document, focusing on oranges.",
             "doc_id_3": "A final document discussing apples and oranges together."
         }
-        ids = list(test_docs.keys())
-        docs = list(test_docs.values())
+        doc_ids = list(test_docs.keys())
+        doc_texts = list(test_docs.values())
 
-        # Check if already populated (e.g., if scope='session' and run before)
-        if collection.count() == 0:
-             print("Collection is empty, adding test documents...")
-             embeddings = model.encode(docs, convert_to_numpy=True).tolist()
-             collection.add(ids=ids, documents=docs, embeddings=embeddings)
-             print(f"Added {len(ids)} documents. Collection count: {collection.count()}")
-             # Add a small delay to ensure persistence if needed, though usually not required
-             # await asyncio.sleep(0.1)
-        else:
-             print(f"Collection already populated with {collection.count()} documents.")
+        # Generate embeddings for the test documents
+        print("Generating embeddings for test documents...")
+        embeddings = embedding_model.encode(doc_texts, convert_to_tensor=False).tolist() # Ensure list output
+        print(f"Generated {len(embeddings)} embeddings.")
 
-        yield collection # Provide the populated collection
+        # Add documents to the collection
+        print(f"Adding {len(doc_ids)} documents to collection '{collection.name}'...")
+        collection.add(
+            ids=doc_ids,
+            documents=doc_texts,
+            embeddings=embeddings # Provide pre-computed embeddings
+
+        )
+        print("Test documents added successfully.")
+
+        # Yield the populated collection so tests can potentially use it
+        yield collection
 
     except Exception as e:
         print(f"Error during populated_chroma_collection setup: {e}")
-        pytest.fail(f"Failed to setup populated Chroma collection: {e}")
+        pytest.fail(f"Failed to setup populated_chroma_collection: {e}")
+    finally:
+        # Optional: Cleanup if needed, though collection deletion might happen elsewhere
+        # or be handled by deleting the temp directory in test_data_dir
+        print("Exiting populated_chroma_collection fixture.")
 
 
-@pytest.fixture(scope="function") # Function scope for test client
-def client(test_app: FastAPI) -> Generator[TestClient, None, None]:
+@pytest_asyncio.fixture(scope="function") # Function scope is typical for clients
+async def client(test_app: FastAPI) -> AsyncGenerator[TestClient, None]:
     """
     Creates a FastAPI TestClient instance for making requests to the test app.
+    Depends on 'test_app' to ensure the app and its lifespan are ready.
     """
+
+    try:
+        # Get the override function for get_settings from the app instance
+        settings_override_func = test_app.dependency_overrides.get(get_settings)
+        if settings_override_func:
+            # Call the override function to get the actual Settings object
+            current_settings = settings_override_func()
+            print(f"DEBUG [client fixture]: test_app CHROMA_PATH from override: '{current_settings.CHROMA_PATH}'")
+            print(f"DEBUG [client fixture]: test_app COLLECTION_NAME from override: '{current_settings.CHROMA_COLLECTION_NAME}'")
+        else:
+            print("DEBUG [client fixture]: No override found for get_settings on test_app.")
+            # Optionally, get default settings if needed for comparison
+            # from app.config import settings as default_settings
+            # print(f"DEBUG [client fixture]: Default CHROMA_PATH: '{default_settings.CHROMA_PATH}'")
+
+        # You can still check the globally initialized collection name as before
+        collection = await get_chroma_collection()
+        print(f"DEBUG [client fixture]: Global collection name BEFORE TestClient creation: '{collection.name}'")
+    except Exception as e:
+        print(f"DEBUG [client fixture]: Error inspecting settings/collection: {e}")
+
+
+    # Create the TestClient using the app instance provided by the test_app fixture
     with TestClient(test_app) as test_client:
         print("TestClient created.")
-        yield test_client
+        yield test_client # Provide the client to the test function
         print("TestClient teardown.")
