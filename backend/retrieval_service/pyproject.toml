@@ -1,20 +1,17 @@
 [project]
-name = "rag"
+name = "retrieval-service"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "chromadb>=0.6.3",
+    "fastapi[standard]>=0.115.6",
+    "pydantic>=2.10.5",
+    "pydantic-settings>=2.7.1",
+]
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.0.1",
-    "pytest>=8.3.4",
-]
-lint = [
     "ruff>=0.9.1",
 ]
-
-[tool.uv.workspace]
-members = ["api_gateway", "rag_service"]
-
