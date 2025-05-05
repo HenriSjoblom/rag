@@ -2,18 +2,19 @@ import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 import chromadb
+from .conftest import get_injected_settings
 
 from app.models import RetrievalResponse
-
-# Mark all tests in this module as needing the session-scoped populated collection
-pytestmark = [
-    pytest.mark.usefixtures("populated_chroma_collection", "client"),
-    pytest.mark.asyncio
-]
+from app.config import Settings
 
 
-def test_retrieve_success_apples(client: TestClient):
+def test_retrieve_success_apples(client: TestClient, override_settings: Settings):
     """Test successful retrieval using the API endpoint."""
+
+
+    settings_used_by_client_app = get_injected_settings(client)
+    assert settings_used_by_client_app is override_settings
+
     print("Testing retrieval for apples...")
     request_data = {"query": "Tell me about apples"}
     response = client.post("/api/v1/retrieve", json=request_data)

@@ -20,6 +20,8 @@ def get_vector_search_service(
     chroma_collection: chromadb.Collection = Depends(get_chroma_collection) # Get from lifespan
 ) -> VectorSearchService:
     """Provides an instance of the VectorSearchService."""
+    print("Creating VectorSearchService instance...")
+    print(f"Settings in creating vector search service used: {settings.CHROMA_PATH}, {settings.CHROMA_COLLECTION_NAME}")
     return VectorSearchService(
         embedding_model=embedding_model,
         chroma_collection=chroma_collection,

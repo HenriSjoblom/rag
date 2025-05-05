@@ -34,6 +34,17 @@ async def get_chroma_collection() -> chromadb.Collection:
 async def lifespan_retrieval_service(app, model_name: str, chroma_path: str, collection_name: str):
     """Manages the lifespan of embedding model and ChromaDB client."""
     global _embedding_model, _chroma_client, _chroma_collection
+
+    # --- For testing ---
+    if _embedding_model is not None and _chroma_collection is not None:
+        print("Lifespan: Resources already initialized (idempotency check). Skipping setup.")
+        # Ensure yield happens even if skipping setup, otherwise context won't work
+        try:
+             yield
+        finally:
+             pass # No teardown needed if setup was skipped
+        return # Exit early
+
     # Load Model
     print("Loading embedding model...")
     print(f"Collection name: {collection_name}")
@@ -91,10 +102,12 @@ class VectorSearchService:
         embedding_model: SentenceTransformer,
         chroma_collection: chromadb.Collection,
         top_k: int,
+        distance_threshold: float = 1.0 # Adjust later this value based on experimentation
     ):
         self.embedding_model = embedding_model
         self.chroma_collection = chroma_collection
         self.top_k = top_k
+        self.distance_threshold = distance_threshold # Store the threshold
 
     def _embed_query(self, query: str) -> List[float]:
         """Generates embedding for the given query text."""
@@ -128,24 +141,63 @@ class VectorSearchService:
             results = self.chroma_collection.query(
                 query_embeddings=[query_embedding], # Chroma expects a list of embeddings
                 n_results=self.top_k,
-                include=['documents'] # We only need the document text content
+                include=['documents', 'distances'] # We only need the document text content
             )
-            logger.info(f"ChromaDB query successful. Found results: {results}")
+            logger.debug(f"Raw ChromaDB query results: {results}")
 
-            # Extract the document texts from the results
-            # Results should now be a dictionary
-            retrieved_docs = results.get('documents', [[]])[0]
-            if not retrieved_docs:
-                 logger.warning("No documents found in ChromaDB for the query.")
-                 return []
+            # Filter results based on distance
+            filtered_chunks = []
+            if results and results.get('ids') and results['ids'][0]:
+                ids = results['ids'][0]
+                documents = results['documents'][0]
+                distances = results['distances'][0]
 
-            logger.info(f"Retrieved {len(retrieved_docs)} document chunks.")
-            return retrieved_docs # Return the list of chunk texts
+                for doc, dist in zip(documents, distances):
+                    if dist <= self.distance_threshold:
+                        filtered_chunks.append(doc)
+                    else:
+                        logger.debug(f"Filtered out chunk due to distance {dist} > {self.distance_threshold}")
+
+            logger.info(f"Returning {len(filtered_chunks)} chunks after distance filtering.")
+            return filtered_chunks
 
         except Exception as e:
             logger.error(f"ChromaDB query failed: {e}", exc_info=True)
-            # Check for specific ChromaDB errors if possible
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to query vector database: {e}",
             ) from e
+
+    async def add_documents(self, documents: Dict[str, str]) -> int:
+        """
+        Embeds and adds new documents to the ChromaDB collection.
+        Returns the number of documents added.
+        """
+        if not documents:
+            logger.warning("Add documents called with an empty dictionary.")
+            return 0
+
+        doc_ids = list(documents.keys())
+        doc_texts = list(documents.values())
+        logger.info(f"Adding {len(doc_ids)} documents to collection '{self.chroma_collection.name}'...")
+
+        try:
+            # Generate embeddings
+            logger.debug("Generating embeddings for new documents...")
+            embeddings = self.embedding_model.encode(doc_texts, convert_to_tensor=False)
+            logger.debug(f"Generated {len(embeddings)} embeddings.")
+
+            self.chroma_collection.add(
+                ids=doc_ids,
+                documents=doc_texts,
+                embeddings=embeddings
+            )
+            logger.info(f"Successfully added/updated {len(doc_ids)} documents.")
+            return len(doc_ids)
+
+        except Exception as e:
+            logger.error(f"Error adding documents to ChromaDB: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to add documents to the collection: {e}"
+            )
