@@ -18,5 +18,5 @@ def get_generation_service(settings: Settings = Depends(get_settings)) -> Genera
     Initializes the LLM client once per worker process.
     """
     print("Creating GenerationService instance (or retrieving from cache)...")
-
+    print(f"Settings in creating generation service used: {settings.LLM_PROVIDER}, {settings.LLM_MODEL_NAME}, {settings.CHROMA_PATH}, {settings.CHROMA_COLLECTION_NAME}")
     return GenerationService(settings=settings)

@@ -18,7 +18,7 @@ VALID_REQUEST_DATA = {
     ]
 }
 
-# --- Helper to get the mock SERVICE object injected via fixture ---
+# --- Helper to get the mock service object injected via fixture ---
 def get_injected_mock_service(client: TestClient) -> MagicMock:
      """Retrieves the mock GenerationService instance injected via dependency overrides."""
      # Access the mocked service injected into the app via the client's app instance
