@@ -2,9 +2,8 @@ from fastapi import FastAPI
 import logging
 from contextlib import asynccontextmanager
 
-from app.api.routers import ingest as ingest_router
-from app.core.config import settings # Import to ensure config loads and validates early
-# Import service functions if managing resources via lifespan
+from app.router import router as ingest_router
+from app.config import settings
 from app.services.ingestion_processor import get_embedding_model, get_chroma_client
 
 # Configure logging
@@ -37,7 +36,7 @@ app = FastAPI(
 )
 
 # Include API routers
-app.include_router(ingest_router.router, prefix="/api/v1")
+app.include_router(ingest_router, prefix="/api/v1")
 
 @app.get("/health", tags=["health"])
 async def health_check():

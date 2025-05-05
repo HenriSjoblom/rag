@@ -1,7 +1,7 @@
 from fastapi import Depends
 from functools import lru_cache
 
-from app.core.config import Settings, settings as global_settings
+from app.config import Settings, settings as global_settings
 from app.services.ingestion_processor import IngestionProcessorService
 
 # Dependency to get application settings

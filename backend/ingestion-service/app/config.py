@@ -7,15 +7,16 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+SERVICE_ROOT_DIR = Path(__file__).resolve().parent
+
 class Settings(BaseSettings):
     """Loads and validates application settings for the Ingestion Service."""
     # Document Source
-    SOURCE_DIRECTORY: str = Field("./documents_to_ingest", validation_alias='SOURCE_DIRECTORY')
-
+    SOURCE_DIRECTORY: str = Field(SERVICE_ROOT_DIR / "documents", validation_alias='SOURCE_DIRECTORY')
     # Embedding Model (Must match retrieval service)
     EMBEDDING_MODEL_NAME: str = Field("all-MiniLM-L6-v2", validation_alias='EMBEDDING_MODEL_NAME')
 
-    CHROMA_LOCAL_PATH: Optional[str] = Field("./data/chroma_db", validation_alias='CHROMA_LOCAL_PATH')
+    CHROMA_PATH: Optional[str] = Field("./data/chroma_db", validation_alias='CHROMA_LOCAL_PATH')
     CHROMA_COLLECTION_NAME: str = Field("support_docs", validation_alias='CHROMA_COLLECTION_NAME')
 
     # Text Splitting

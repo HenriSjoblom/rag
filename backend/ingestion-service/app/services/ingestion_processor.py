@@ -15,7 +15,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
 from app.config import Settings
-from app.model import IngestionStatus
+from app.models import IngestionStatus
 
 
 logging.basicConfig(level=logging.INFO)
