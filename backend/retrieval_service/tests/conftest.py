@@ -1,40 +1,36 @@
-# tests/conftest.py
 import pytest
-import pytest_asyncio  # Import for async fixtures
+import pytest_asyncio
 import shutil
 from pathlib import Path
 import uuid
-from typing import Generator, AsyncGenerator, List # Import List
+from typing import Generator, AsyncGenerator, List
+import tempfile
+import numpy as np
 
-# --- Mock Objects ---
 from unittest.mock import MagicMock, AsyncMock
 from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb import Collection
-from chromadb.api.models.Collection import Collection as ChromaCollectionModel # Type hint fix
+from chromadb.api.models.Collection import Collection as ChromaCollectionModel
 
-# --- FastAPI Testing ---
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
 
-# --- Application Imports ---
-# Important: Adjust the path if your tests directory is structured differently
-# This assumes 'tests' is at the same level as 'app'
-from app.main import app as fastapi_app # Import your FastAPI app instance
-from app.core.config import Settings, settings as app_settings
-from app.api.deps import get_settings # Import dependency getter for overriding
+from app.main import app as fastapi_app
+from app.config import Settings, settings as app_settings
+from app.deps import get_settings, get_vector_search_service
 from app.services.vector_search import (
     get_embedding_model,
     get_chroma_collection,
-    VectorSearchService
+    VectorSearchService,
+    lifespan_retrieval_service
 )
 
 # -- Fixture Configuration --
-
 @pytest.fixture(scope="session")
 def test_data_dir() -> Path:
-    """Creates a temporary directory for test data (like ChromaDB)."""
+    """Creates a temporary directory for test data."""
     path = Path("./test_temp_data")
     if path.exists():
         shutil.rmtree(path) # Clean up from previous runs
@@ -42,8 +38,8 @@ def test_data_dir() -> Path:
     print(f"Created test data dir: {path.resolve()}")
     yield path
     # Teardown: Remove the directory after the test session
-    print(f"Removing test data dir: {path.resolve()}")
-    shutil.rmtree(path)
+    #print(f"Removing test data dir: {path.resolve()}")
+    #shutil.rmtree(path)
 
 @pytest.fixture(scope="session")
 def test_chroma_path(test_data_dir: Path) -> str:
@@ -56,145 +52,174 @@ def test_collection_name() -> str:
     return f"test_collection_{uuid.uuid4().hex[:8]}"
 
 # -- Settings Override --
-
 @pytest.fixture(scope="session")
-def override_settings(test_chroma_path: str, test_collection_name: str) -> Settings:
-    """Creates a Settings instance specifically for testing."""
-    # Override settings to use test paths and potentially different models/config
-    return Settings(
-        EMBEDDING_MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2", # Use a real (small) model for integration tests
-        TOP_K_RESULTS=3,
-        CHROMA_MODE="local",
-        CHROMA_LOCAL_PATH=test_chroma_path, # Use the temp path
+def override_settings(test_chroma_path: str, test_collection_name: str) -> Settings: # Add dependencies
+    """Creates a Settings instance for testing using individual fields."""
+
+    # Instantiate Settings using the fields defined in app/config.py
+    settings = Settings(
+        EMBEDDING_MODEL_NAME="all-MiniLM-L6-v2",
         CHROMA_COLLECTION_NAME=test_collection_name,
-        # CHROMA_HOST=None, # Ensure server settings are None for local mode
-        # CHROMA_PORT=None,
-        # Override other settings if necessary
+        CHROMA_PATH=test_chroma_path,
+        TOP_K_RESULTS=3, # Use the correct field name from config.py
     )
 
-# -- Mock Fixtures (for Unit Tests) --
+    yield settings
 
+# -- Mock Fixtures (for Unit Tests) --
 @pytest.fixture
 def mock_embedding_model() -> MagicMock:
-    """Provides a mock SentenceTransformer model."""
+    """Provides a mock SentenceTransformer model for unit tests."""
     mock_model = MagicMock(spec=SentenceTransformer)
-    # Simulate the encode method's behavior
-    def _mock_encode(texts, convert_to_numpy=False):
-        # Return dummy embeddings (list of lists)
-        # Ensure the dimension matches what your Chroma setup might expect,
-        # or keep it simple if Chroma is also mocked.
-        # Dimension for all-MiniLM-L6-v2 is 384
-        if isinstance(texts, str):
-             num_texts = 1
+
+    # Define a side effect function to handle different calls to encode
+    def encode_side_effect(*args, **kwargs):
+        input_data = args[0] # The text or list of texts
+        convert_to_numpy = kwargs.get('convert_to_numpy', False)
+        convert_to_tensor = kwargs.get('convert_to_tensor', False)
+
+        # Determine if input is a single query or a list of documents
+        is_single_query = isinstance(input_data, str)
+        num_items = 1 if is_single_query else len(input_data)
+        embedding_dim = 384 # Example dimension
+
+        # Generate mock embeddings
+        mock_embeddings = [np.random.rand(embedding_dim).astype(np.float32) for _ in range(num_items)]
+
+        if convert_to_numpy:
+            # _embed_query expects a single numpy array for a single query
+            if is_single_query:
+                return mock_embeddings[0]
+            else:
+                # This case shouldn't happen with convert_to_numpy=True in the current code
+                # but handle it just in case by returning a list of arrays
+                 return mock_embeddings
+        elif convert_to_tensor is False:
+             # add_documents expects a list of lists
+             return [emb.tolist() for emb in mock_embeddings]
         else:
-             num_texts = len(texts)
-        embeddings = [[float(i) for i in range(384)] for _ in range(num_texts)]
-        return embeddings if not convert_to_numpy else MagicMock(tolist=lambda: embeddings) # Simulate tolist() if needed
-    mock_model.encode.side_effect = _mock_encode
+             # Handle other cases or raise error if needed
+             # For now, return list of lists as a default fallback
+             return [emb.tolist() for emb in mock_embeddings]
+
+    # Assign the side effect function to the mock's encode method
+    mock_model.encode.side_effect = encode_side_effect
+
     return mock_model
 
 @pytest.fixture
-def mock_chroma_collection() -> AsyncMock:
-    """Provides a mock ChromaDB Collection object."""
-    mock_collection = AsyncMock(spec=ChromaCollectionModel) # Use the correct type hint
-    mock_collection.name = "mock_collection"
+def mock_chroma_collection() -> MagicMock:
+    """Provides a mock ChromaDB Collection object for unit tests."""
+    mock_collection = MagicMock(spec=chromadb.Collection)
+    mock_collection.name = "mock_collection" # Add name attribute used in logging
+    mock_collection.query = MagicMock(name="MockQueryMethod")
 
-    # Simulate the query method - make it async if your service awaits it
-    # Even if the underlying library isn't async, mocking it as async
-    # is fine if the calling code uses `await`.
-    async def _mock_query(query_embeddings: List[List[float]], n_results: int, include: List[str]):
-        print(f"Mock Chroma query called with {len(query_embeddings)} embedding(s), n_results={n_results}")
-        # Simulate finding some results
-        if query_embeddings[0][0] == 0.0: # Example condition based on dummy embedding
-            return {
-                'ids': [['id1', 'id2']],
-                'embeddings': None,
-                'documents': [['mock chunk 1', 'mock chunk 2']],
-                'metadatas': [[{'source': 'docA'}, {'source': 'docB'}]],
-                'distances': [[0.1, 0.2]]
-            }
-        else: # Simulate finding nothing
-             return {'ids': [[]], 'embeddings': None, 'documents': [[]], 'metadatas': [[]], 'distances': [[]]}
+    # Default query result simulating found documents
+    default_query_result = {
+        'ids': [['doc_id_1', 'doc_id_2']],
+        'embeddings': None,
+        'documents': [['mock chunk 1', 'mock chunk 2']],
+        'metadatas': [[{'source': 'mock'}, {'source': 'mock'}]],
+        'distances': [[0.1, 0.2]]
+    }
+    # Configure the query method's default return value
+    mock_collection.query.return_value = default_query_result
 
-    mock_collection.query = _mock_query # Assign the async mock function
     return mock_collection
 
+@pytest.fixture
+def mock_search_service() -> AsyncMock:
+    """Provides a mock VectorSearchService for dependency injection."""
+    mock = AsyncMock(spec=VectorSearchService)
+    # Mock the collection attribute needed in the response
+    mock.chroma_collection = MagicMock()
+    mock.chroma_collection.name = "mock_test_collection"
+    return mock
 
 # -- Integration Test Fixtures --
-
-@pytest_asyncio.fixture(scope="session") # Use async fixture for session scope with async setup
+@pytest_asyncio.fixture(scope="session")
 async def test_app(override_settings: Settings) -> AsyncGenerator[FastAPI, None]:
-    """Creates a test FastAPI app instance with overridden settings and lifespan."""
-
-    # Override the settings dependency for the entire test app session
+    """
+    Creates a test FastAPI app instance for the session, applies overrides,
+    and manages the app's lifespan context.
+    """
+    print("Setting up test_app fixture (session scope)...")
+    # Store original overrides to restore later
+    original_overrides = fastapi_app.dependency_overrides.copy()
     fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
+    print("Applied settings override.")
 
-    # Manually run lifespan startup events
-    async with httpx.AsyncClient(app=fastapi_app, base_url="http://test") as client:
-        # The lifespan context manager from the app should handle startup
-        # No need to manually call startup here if lifespan is set correctly
-        print("Test App Lifespan Startup completed (via lifespan manager).")
-        yield fastapi_app # Provide the app instance to tests
-        # Lifespan shutdown should be handled automatically on context exit
-        print("Test App Lifespan Shutdown completed (via lifespan manager).")
-
-    # Clear overrides after session
-    fastapi_app.dependency_overrides = {}
-
+    # Manually create and run the lifespan manager
+    lifespan_manager = lifespan_retrieval_service(
+        app=fastapi_app,
+        model_name=override_settings.EMBEDDING_MODEL_NAME,
+        chroma_path=override_settings.CHROMA_PATH, # Or chroma_settings dict
+        collection_name=override_settings.CHROMA_COLLECTION_NAME
+    )
+    print("Created lifespan manager.")
+    try:
+        async with lifespan_manager:
+            yield fastapi_app
+    finally:
+        print("Tearing down test_app fixture (session scope)...")
+        fastapi_app.dependency_overrides = original_overrides
+        print("Restored original dependency overrides.")
 
 @pytest_asyncio.fixture(scope="session") # Depends on test_app to ensure lifespan runs
-async def populated_chroma_collection(test_app: FastAPI) -> AsyncGenerator[Collection, None]:
+async def populated_chroma_collection(test_app: FastAPI) -> AsyncGenerator[ChromaCollectionModel, None]:
     """
-    Fixture to get the ChromaDB collection *after* the app's lifespan has
-    initialized it and populated it with some test data.
+    Populates the ChromaDB collection AFTER test_app has run the lifespan. Runs once per session.
     """
-    # Get the dependencies directly from the app's state or re-resolve them
-    # This assumes the lifespan correctly populates the global _embedding_model and _chroma_collection
-    # A more robust way might involve yielding the collection from the lifespan itself,
-    # but this works if lifespan modifies globals or app state accessible here.
-
-    # Let's retrieve the dependencies *after* startup via the dependency injectors
-    # We need an actual request context or similar to resolve dependencies usually,
-    # but since they are cached by lifespan, we can try accessing them via the getters
-    # (This might be slightly brittle depending on FastAPI internals/lifespan implementation)
-
+    print("Entering populated_chroma_collection fixture (session scope)...")
     try:
+        # Lifespan ran manually in test_app, so globals should be set
         collection = await get_chroma_collection()
-        model = await get_embedding_model()
-        print(f"Populating Chroma collection: {collection.name}")
+        print(f"Retrieved collection '{collection.name}' for population.")
+        embedding_model = await get_embedding_model()
+
 
         test_docs = {
             "doc_id_1": "This is the first test document about apples.",
             "doc_id_2": "This is a second document, focusing on oranges.",
             "doc_id_3": "A final document discussing apples and oranges together."
         }
-        ids = list(test_docs.keys())
-        docs = list(test_docs.values())
+        doc_ids = list(test_docs.keys())
+        doc_texts = list(test_docs.values())
+        print("Generating embeddings (session scope)...")
+        embeddings = embedding_model.encode(doc_texts, convert_to_tensor=False).tolist()
+        print("Adding documents (session scope)...")
+        collection.add(ids=doc_ids, documents=doc_texts, embeddings=embeddings)
+        print(f"Test documents added successfully to '{collection.name}'. Count: {collection.count()}")
 
-        # Check if already populated (e.g., if scope='session' and run before)
-        if collection.count() == 0:
-             print("Collection is empty, adding test documents...")
-             embeddings = model.encode(docs, convert_to_numpy=True).tolist()
-             collection.add(ids=ids, documents=docs, embeddings=embeddings)
-             print(f"Added {len(ids)} documents. Collection count: {collection.count()}")
-             # Add a small delay to ensure persistence if needed, though usually not required
-             # await asyncio.sleep(0.1)
-        else:
-             print(f"Collection already populated with {collection.count()} documents.")
-
-        yield collection # Provide the populated collection
+        yield collection
 
     except Exception as e:
         print(f"Error during populated_chroma_collection setup: {e}")
-        pytest.fail(f"Failed to setup populated Chroma collection: {e}")
+        pytest.fail(f"Failed to setup populated_chroma_collection: {e}")
+    finally:
+        print("Exiting populated_chroma_collection fixture (session scope).")
 
 
-@pytest.fixture(scope="function") # Function scope for test client
-def client(test_app: FastAPI) -> Generator[TestClient, None, None]:
+@pytest_asyncio.fixture(scope="function")
+async def client(populated_chroma_collection: ChromaCollectionModel, test_app: FastAPI) -> AsyncGenerator[TestClient, None]: # Depend on population & test_app
     """
-    Creates a FastAPI TestClient instance for making requests to the test app.
+    Creates a TestClient. Ensures collection is populated first (via session fixture).
+    TestClient will trigger app's registered lifespan again, but it should be idempotent.
     """
+    print(f"DEBUG [client fixture]: Collection '{populated_chroma_collection.name}' is populated (session scope).")
+
     with TestClient(test_app) as test_client:
-        print("TestClient created.")
+        print("TestClient created (may trigger idempotent lifespan check).")
         yield test_client
         print("TestClient teardown.")
+
+def get_injected_settings(client: TestClient) -> Settings:
+     """Retrieves the Settings instance injected via dependency overrides."""
+     # Access the override function for get_settings from the app instance
+     settings_override_func = client.app.dependency_overrides.get(get_settings)
+     if not settings_override_func:
+         pytest.fail("Dependency override for get_settings not found in test app.")
+
+     injected_settings = settings_override_func()
+
+     return injected_settings

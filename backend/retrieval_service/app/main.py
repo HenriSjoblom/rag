@@ -1,35 +1,53 @@
-# app/main.py
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
+import logging
 
-from app.routers import router as retriever_router
-from app.config import settings
-from app.services.http_client import lifespan_http_client
+from app.routers import router as retrieve_router
+from app.deps import get_settings
+from app.services.vector_search import lifespan_retrieval_service
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan manager to load model and connect to DB on startup,
+    and clean up on shutdown.
+    """
+    settings = get_settings()
+    print(f"ChromaDB path: {settings.CHROMA_PATH}")
+    logger.info("Retrieval service lifespan startup...")
+    # Use the async context manager from vector_search service
+    print("Starting lifespan context manager...")
+    print(f"Model name: {settings.EMBEDDING_MODEL_NAME}")
+    print(f"Collection name: {settings.CHROMA_COLLECTION_NAME}")
+    print(f"ChromaDB path: {settings.CHROMA_PATH}")
+    async with lifespan_retrieval_service(
+        app=app,
+        model_name=settings.EMBEDDING_MODEL_NAME,
+        chroma_path=settings.CHROMA_PATH,
+        collection_name=settings.CHROMA_COLLECTION_NAME
+    ):
+        logger.info("Retrieval service startup complete. Model and DB connection ready.")
+        yield # Application runs
+    # Cleanup happens automatically when exiting the 'async with' block
+    logger.info("Retrieval service lifespan shutdown complete.")
+
 
 app = FastAPI(
-    title="Chat API Service",
-    description="Orchestrates RAG pipeline for the customer support chatbot.",
+    title="Retrieval Service",
+    description="Embeds queries and retrieves relevant documents from a vector database.",
     version="1.0.0",
+    lifespan=lifespan # Register the lifespan manager
 )
 
 # Include API routers
-app.include_router(retriever_router, prefix="/api/v1")
-
-# Add cors middleware
-origins = [
-     "http://localhost",
-     "http://localhost:3000"
-]
-app.add_middleware(
-    CORSMiddleware,
-     allow_origins=origins,
-     allow_credentials=True,
-     allow_methods=["*"],
-     allow_headers=["*"],
-)
-
+app.include_router(retrieve_router, prefix="/api/v1") # Add a version prefix
 
 @app.get("/health", tags=["health"])
 async def health_check():
-    """Health check endpoint."""
+    """Basic health check endpoint."""
     return {"status": "ok"}
