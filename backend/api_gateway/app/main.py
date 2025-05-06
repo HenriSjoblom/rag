@@ -1,17 +1,29 @@
 from fastapi import FastAPI
-from app.api.routes import router as api_router
+from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
-import logging
+from app.routers import router as gateway_router
+from app.config import Settings
+from app.services.http_client import lifespan_http_client
+from app.deps import get_settings
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
-app = FastAPI(title="RAG API Gateway")
+settings: Settings = get_settings()
 
-# Include API routes
-app.include_router(api_router, prefix="/api/v1")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with lifespan_http_client(app, timeout=settings.HTTP_CLIENT_TIMEOUT):
+        yield
+
+
+app = FastAPI(
+    title="API Gateway Service",
+    description="Orchestrates RAG pipeline.",
+    version="1.0.0"
+)
+
+# Include API routers
+app.include_router(gateway_router, prefix="/api/v1")
 
 # Health check endpoint
 @app.get("/health")
