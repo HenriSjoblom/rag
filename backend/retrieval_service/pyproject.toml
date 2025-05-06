@@ -1,22 +1,19 @@
 [project]
-name = "api-gateway"
+name = "retrieval-service"
 version = "0.1.0"
 description = "Add your description here"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "chromadb>=0.6.3",
     "fastapi[standard]>=0.115.6",
-    "httpx>=0.28.1",
     "pydantic>=2.10.5",
     "pydantic-settings>=2.7.1",
-    "uvicorn>=0.34.0",
+    "sentence-transformers>=4.1.0",
 ]
 
 [dependency-groups]
 dev = [
-    "fastapi-cli>=0.0.7",
-    "pyright>=1.1.391",
-    "pytest>=8.3.4",
-    "rich-toolkit>=0.14.1",
+    "numpy>=1.26.4",
     "ruff>=0.9.1",
-    "typer>=0.15.2",
 ]

@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/query")
+@router.get("/query")
 async def query():
   try:
     return {"response": "This is a test query response"}
