@@ -1,10 +1,12 @@
 import pytest
+import pytest_asyncio
 import shutil
 import os
 from pathlib import Path
 import uuid
 from typing import Generator, AsyncGenerator, List, Dict, Any, Tuple
 import httpx
+
 
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -16,6 +18,8 @@ from app.config import Settings
 from app.services.chat_processor import (
     ChatProcessorService,
 )
+from app.deps import get_settings
+from app.services.http_client import lifespan_http_client
 
 # --- Fixtures ---
 
@@ -45,16 +49,28 @@ def mocked_chat_service(
     service = ChatProcessorService(settings=override_settings, http_client=mock_http_client)
     return service
 
-@pytest.fixture(scope="session")
-def test_app():
+@pytest_asyncio.fixture(scope="session")
+async def test_app() -> FastAPI:
     """
     Provides the FastAPI application instance for testing.
     Lifespan events will be run once per session.
     """
-    yield fastapi_app
+    fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
+    print("Applied settings override.")
 
-@pytest.fixture(scope="session") # Changed to session scope for client
-def client(test_app: FastAPI) -> Generator[TestClient, None, None]:
+    # Manually create and run the lifespan manager
+    lifespan_manager = lifespan_http_client(
+        app=fastapi_app,
+        timeout=5,
+    )
+    print("Created lifespan manager.")
+
+    async with lifespan_manager:
+        yield fastapi_app
+
+
+@pytest_asyncio.fixture(scope="function")
+async def client(test_app: FastAPI) -> AsyncGenerator[TestClient, None]:
     """
     A TestClient instance for testing the API.
     Lifespan events are managed by TestClient.
