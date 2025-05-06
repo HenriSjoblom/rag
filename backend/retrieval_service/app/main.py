@@ -41,7 +41,7 @@ app = FastAPI(
     title="Retrieval Service",
     description="Embeds queries and retrieves relevant documents from a vector database.",
     version="1.0.0",
-    lifespan=lifespan # Register the lifespan manager
+    lifespan=lifespan
 )
 
 # Include API routers

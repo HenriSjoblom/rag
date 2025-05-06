@@ -153,7 +153,7 @@ async def test_app(override_settings: Settings) -> AsyncGenerator[FastAPI, None]
     lifespan_manager = lifespan_retrieval_service(
         app=fastapi_app,
         model_name=override_settings.EMBEDDING_MODEL_NAME,
-        chroma_path=override_settings.CHROMA_PATH, # Or chroma_settings dict
+        chroma_path=override_settings.CHROMA_PATH,
         collection_name=override_settings.CHROMA_COLLECTION_NAME
     )
     print("Created lifespan manager.")
