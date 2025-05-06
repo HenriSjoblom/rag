@@ -1,10 +1,8 @@
-# app/services/http_client.py
 import httpx
 from typing import Optional, Dict, Any, Union, List
 from contextlib import asynccontextmanager
 from fastapi import HTTPException, status
 
-# Global httpx client instance (managed by lifespan)
 _client: Optional[httpx.AsyncClient] = None
 
 async def get_http_client() -> httpx.AsyncClient:

@@ -1,15 +1,36 @@
-# api_gateway/src/api/routes.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 
-import logging
+from app.models import ChatRequest, ChatResponse
+from app.services.chat_processor import ChatProcessorService
+from app.deps import get_chat_processor_service
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.get("/query")
-async def query():
-  try:
-    return {"response": "This is a test query response"}
-  except Exception as e:
-    logger.error(f"Error in query endpoint: {str(e)}")
-    raise HTTPException(status_code=500, detail="Internal server error")
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    summary="Process a user chat message",
+    description="Receives a user message, orchestrates RAG pipeline and returns the response.",
+    tags=["chat"]
+)
+async def handle_chat_message(
+    request: ChatRequest,
+    chat_service: ChatProcessorService = Depends(get_chat_processor_service) # Inject the service
+):
+    """
+    Handles incoming chat messages.
+    """
+    try:
+        print(f"Received chat request: {request}")
+        bot_message = await chat_service.process_message(request)
+        return ChatResponse(bot_response=bot_message)
+    except HTTPException as e:
+        # If the service layer raised an HTTPException, re-raise it
+        raise e
+    except Exception as e:
+        # Catch any other unexpected errors during processing
+        print(f"Unexpected error in chat endpoint: {e}") # Log the error
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal error occurred while processing your message.",
+        )

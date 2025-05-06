@@ -1,10 +1,9 @@
-# app/services/chat_processor.py
 import httpx
 from typing import List
 from fastapi import Depends, HTTPException, status
 
-from app.core.config import Settings
-from app.models.chat import (
+from app.config import Settings
+from app.models import (
     RetrievalRequest,
     RetrievalResponse,
     GenerationRequest,
@@ -34,6 +33,8 @@ class ChatProcessorService:
                 json_data=payload.model_dump()
             )
             # Validate response structure (basic check)
+            print(f"Response data from retrieval service: {response_data}")
+            print(f"make request id: {id(make_request)}")
             retrieval_response = RetrievalResponse(**response_data)
             return retrieval_response.chunks
         except HTTPException as e:
@@ -89,7 +90,7 @@ class ChatProcessorService:
         """
         print(f"Processing message from user: {request.user_id}")
 
-        # 1. Retrieve relevant context chunks
+        # Retrieve relevant context chunks
         print(f"Calling retrieval service for query: '{request.message[:50]}...'")
         retrieved_chunks = await self._call_retrieval_service(query=request.message)
         print(f"Retrieved {len(retrieved_chunks)} chunks.")
@@ -100,7 +101,7 @@ class ChatProcessorService:
              # return "I couldn't find specific information about that in my knowledge base. Can you please rephrase or ask something else?"
              # Or proceed to generation, letting the LLM handle lack of context (might hallucinate more)
 
-        # 2. Generate the final answer using the LLM
+        # Generate the final answer using the LLM
         print("Calling generation service...")
         final_answer = await self._call_generation_service(
             query=request.message,
