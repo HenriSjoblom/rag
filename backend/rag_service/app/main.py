@@ -1,13 +1,12 @@
-# app/main.py
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 from app.routers import router as rag_router
-from app.config import settings
+from app.config import Settings
 from app.services.http_client import lifespan_http_client
 from app.deps import get_settings
-from app.config import Settings
-from contextlib import asynccontextmanager
+
 
 settings: Settings = get_settings()
 

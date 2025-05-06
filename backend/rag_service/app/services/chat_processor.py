@@ -23,7 +23,7 @@ class ChatProcessorService:
 
     async def _call_retrieval_service(self, query: str) -> List[str]:
         """Calls the retrieval microservice."""
-        retrieval_url = f"{str(self.settings.RETRIEVAL_SERVICE_URL).rstrip('/')}/retrieve" # Assuming /retrieve endpoint
+        retrieval_url = f"{str(self.settings.RETRIEVAL_SERVICE_URL).rstrip('/')}/retrieve"
         payload = RetrievalRequest(query=query)
         try:
             response_data = await make_request(
