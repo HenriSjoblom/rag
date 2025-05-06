@@ -5,6 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import router as rag_router
 from app.config import settings
 from app.services.http_client import lifespan_http_client
+from app.deps import get_settings
+from app.config import Settings
+from contextlib import asynccontextmanager
+
+settings: Settings = get_settings()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with lifespan_http_client(app, timeout=settings.HTTP_CLIENT_TIMEOUT):
+        yield
+
 
 app = FastAPI(
     title="Chat API Service",
@@ -13,7 +24,7 @@ app = FastAPI(
 )
 
 # Include API routers
-app.include_router(rag_router, prefix="/api/v1") # Add a version prefix
+app.include_router(rag_router, prefix="/api/v1")
 
 # Add cors middleware
 origins = [

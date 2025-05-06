@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     """Loads and validates application settings from environment variables."""
     RETRIEVAL_SERVICE_URL: AnyHttpUrl = Field(..., validation_alias='RETRIEVAL_SERVICE_URL')
     GENERATION_SERVICE_URL: AnyHttpUrl = Field(..., validation_alias='GENERATION_SERVICE_URL')
+    HTTP_CLIENT_TIMEOUT: float = 10.0
 
     # Configure Pydantic settings to load from a .env file
     model_config = SettingsConfigDict(
