@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.models import IngestionResponse
 from app.services.ingestion_processor import IngestionProcessorService, Settings
-# Import the specific dependency if needed for type hints
+
 from app.deps import get_ingestion_processor_service
 
 pytestmark = pytest.mark.usefixtures("client")
@@ -27,7 +27,6 @@ def test_trigger_ingestion_success(
     # Mock the background task runner function itself
     mock_runner = mocker.patch('app.router.run_ingestion_background')
 
-    # --- Simplified Path Mocking ---
     # Create a mock file object that behaves like a file
     mock_file = MagicMock(spec=Path)
     mock_file.is_file.return_value = True
@@ -35,7 +34,6 @@ def test_trigger_ingestion_success(
     # Mock rglob directly on the Path class within the router's context
     # Ensure it returns a list containing our mock file object
     mock_rglob = mocker.patch('app.router.Path.rglob', return_value=[mock_file])
-    # --- End Simplified Path Mocking ---
 
     # Make the API call
     response = client.post("/api/v1/ingest")
@@ -64,9 +62,7 @@ def test_trigger_ingestion_already_running(client: TestClient):
 
 def test_trigger_ingestion_source_dir_not_found(client: TestClient, mocker):
     """Test triggering ingestion when the source directory doesn't exist."""
-    # Need to mock the Path constructor again for this specific check,
-    # or mock Path.exists if the router checks that first.
-    # Assuming the router does Path(settings...).rglob directly:
+
     mock_path_instance = MagicMock(spec=Path)
     # Simulate an error during rglob if the directory doesn't exist
     mock_path_instance.rglob.side_effect = FileNotFoundError("Directory not found")
