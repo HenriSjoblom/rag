@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
     response_model=RetrievalResponse,
     summary="Retrieve relevant document chunks",
     description="Receives a query, embeds it, and retrieves the most relevant text chunks from the vector database.",
-    tags=["Retrieval"]
+    tags=["retrieval"]
 )
 async def retrieve_chunks(
     request: RetrievalRequest,
