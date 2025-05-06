@@ -1,33 +1,27 @@
 import pytest
-import pytest_asyncio
 import shutil
 import os
 from pathlib import Path
 import uuid
-from typing import Generator, AsyncGenerator, List, Dict, Any
+from typing import Generator, AsyncGenerator, List, Dict, Any, Tuple
 
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.testclient import TestClient
-import httpx
 
 from app.main import app as fastapi_app
 from app.config import Settings, settings as app_settings
+
 from app.deps import get_settings, get_ingestion_processor_service
 from app.services.ingestion_processor import (
     IngestionProcessorService,
-    get_embedding_model,
-    get_chroma_client,
-    get_vector_store,
     IngestionStatus,
 )
-from langchain_core.documents import Document
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import SentenceTransformerEmbeddings
-import chromadb
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
+
+# --- Test Directory Setup ---
 
 @pytest.fixture(scope="session")
 def test_data_root() -> Path:
@@ -72,7 +66,7 @@ def test_collection_name() -> str:
     """Provides a unique collection name for testing."""
     return f"test_ingest_collection_{uuid.uuid4().hex[:8]}"
 
-# -- Settings Override --
+# --- Settings Override --
 
 @pytest.fixture(scope="session")
 def override_settings(
@@ -87,13 +81,12 @@ def override_settings(
         EMBEDDING_MODEL_NAME="sentence-transformers/all-MiniLM-L6-v2",
         CHUNK_SIZE=100, # Smaller chunk size for easier testing
         CHUNK_OVERLAP=20,
-        CHROMA_MODE="local",
         CHROMA_LOCAL_PATH=test_chroma_path, # Use temp chroma path
         CHROMA_COLLECTION_NAME=test_collection_name,
         CLEAN_COLLECTION_BEFORE_INGEST=False
     )
 
-# -- Mock Fixtures (for Unit Tests) --
+# --- Mock Fixtures (for Unit Tests) --
 
 @pytest.fixture
 def mock_directory_loader() -> MagicMock:
@@ -138,50 +131,110 @@ def mock_chroma_client() -> MagicMock:
     mock.get_or_create_collection = MagicMock(return_value=MagicMock(spec=chromadb.Collection))
     return mock
 
-# -- Integration Test Fixtures --
-
-@pytest_asyncio.fixture(scope="function") # Function scope for clean state between tests
-async def test_app(
-    override_settings: Settings
-) -> AsyncGenerator[FastAPI, None]:
-    """
-    Creates a test FastAPI app instance with overridden settings and lifespan.
-    Uses real ChromaDB and Embedding model for integration testing the flow.
-    """
-    # Reset global singletons in ingestion_processor before each test run
-    # This ensures that settings changes between tests are reflected
-    with patch('app.services.ingestion_processor._embedding_model', None), \
-         patch('app.services.ingestion_processor._chroma_client', None), \
-         patch('app.services.ingestion_processor._vector_store', None):
-
-        # Override the settings dependency
-        fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
-
-        # Use FastAPI's lifespan context manager via httpx client
-        # This ensures startup/shutdown events (like pre-loading) run
-        async with httpx.AsyncClient(app=fastapi_app, base_url="http://test") as client:
-            print("Test App Lifespan Startup completed (via lifespan manager).")
-            yield fastapi_app # Provide the app instance to tests
-            print("Test App Lifespan Shutdown completed (via lifespan manager).")
-
-    # Clear overrides after test function
-    fastapi_app.dependency_overrides = {}
-
-
-@pytest.fixture(scope="function")
-def client(test_app: FastAPI) -> Generator[TestClient, None, None]:
-    """Creates a FastAPI TestClient instance for making requests."""
-    # Reset the ingestion lock before each test that uses the client
-    with patch('app.api.routers.ingest.is_ingesting', False):
-        with TestClient(test_app) as test_client:
-            print("TestClient created.")
-            yield test_client
-            print("TestClient teardown.")
+# --- Integration Test Fixtures ---
 
 @pytest.fixture
 def mock_background_tasks() -> MagicMock:
     """Mocks FastAPI's BackgroundTasks."""
     mock = MagicMock(spec=BackgroundTasks)
     mock.add_task = MagicMock()
+    print(f"Created mock_background_tasks with ID: {id(mock)}") # Debug print
     return mock
 
+@pytest.fixture(scope="function")
+def client(
+    override_settings: Settings,
+    mock_background_tasks: MagicMock
+) -> Generator[TestClient, None, None]:
+    """
+    Creates a FastAPI TestClient instance for making requests.
+    Handles lifespan events, settings override, singleton patching,
+    and BackgroundTasks override.
+    """
+    # Apply patches
+    with patch('app.services.ingestion_processor._embedding_model', None), \
+         patch('app.services.ingestion_processor._chroma_client', None), \
+         patch('app.services.ingestion_processor._vector_store', None), \
+         patch('app.router.is_ingesting', False):
+
+        # Store original overrides
+        original_overrides = fastapi_app.dependency_overrides.copy()
+
+        # Apply overrides DIRECTLY before creating TestClient
+        fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
+        fastapi_app.dependency_overrides[BackgroundTasks] = lambda: mock_background_tasks
+        print(f"Applied overrides to fastapi_app ({id(fastapi_app)}): Settings={id(override_settings)}, BGTasks={id(mock_background_tasks)}")
+
+        # Create TestClient AFTER overrides are applied
+        try:
+            # Ensure we pass the *exact* app instance we just modified
+            with TestClient(fastapi_app) as test_client:
+                print(f"TestClient created using app instance ID: {id(test_client.app)}")
+                # --- Verify overrides on the client's app instance ---
+                bg_override = test_client.app.dependency_overrides.get(BackgroundTasks)
+                if bg_override:
+                    print(f"Override for BackgroundTasks found on test_client.app. ID of returned mock: {id(bg_override())}")
+                else:
+                    print("!!! Override for BackgroundTasks NOT FOUND on test_client.app !!!")
+                # ---
+                yield test_client
+                print("TestClient context exit.")
+        finally:
+            # Restore original overrides
+            fastapi_app.dependency_overrides = original_overrides
+            print("Restored original dependency overrides.")
+
+
+@pytest.fixture(scope="function")
+def client_with_backgroundtasks(
+    override_settings: Settings
+    # Remove mock_background_tasks from arguments
+) -> Generator[Tuple[TestClient, MagicMock], None, None]: # Change return type hint
+    """
+    Creates a FastAPI TestClient instance and the BackgroundTasks mock.
+    Handles lifespan events, settings override, singleton patching,
+    and BackgroundTasks override.
+    Yields a tuple: (TestClient, mock_background_tasks)
+    """
+    # --- Create the mock INSIDE the client fixture ---
+    mock_bg_tasks = MagicMock(spec=BackgroundTasks)
+    mock_bg_tasks.add_task = MagicMock()
+    print(f"[Fixture client] Created mock_bg_tasks with ID: {id(mock_bg_tasks)}")
+    # ---
+
+    # Apply patches
+    with patch('app.services.ingestion_processor._embedding_model', None), \
+         patch('app.services.ingestion_processor._chroma_client', None), \
+         patch('app.services.ingestion_processor._vector_store', None), \
+         patch('app.router.is_ingesting', False):
+
+        # Store original overrides
+        original_overrides = fastapi_app.dependency_overrides.copy()
+
+        # Apply overrides using the locally created mock
+        fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
+        fastapi_app.dependency_overrides[BackgroundTasks] = lambda: mock_bg_tasks # Use local mock
+        print(f"[Fixture client] Applied overrides to fastapi_app ({id(fastapi_app)}): Settings={id(override_settings)}, BGTasks={id(mock_bg_tasks)}")
+
+        # Create TestClient using the app with settings override
+        with TestClient(fastapi_app) as test_client:
+            print(f"[Fixture client] TestClient created using app instance ID: {id(test_client.app)}")
+
+            # --- Apply BackgroundTasks override AFTER client creation ---
+            # Store original overrides from the client's app instance (if any)
+            original_client_app_overrides = test_client.app.dependency_overrides.copy()
+            # Apply the override using the mock instance created in this fixture
+            test_client.app.dependency_overrides[BackgroundTasks] = lambda: mock_bg_tasks
+            print(f"[Fixture client] Applied BackgroundTasks override (ID: {id(mock_bg_tasks)}) directly to test_client.app ({id(test_client.app)})")
+            # --- Verification ---
+            bg_override_check = test_client.app.dependency_overrides.get(BackgroundTasks)
+            if bg_override_check and id(bg_override_check()) == id(mock_bg_tasks):
+                  print(f"[Fixture client] Verified override on test_client.app. Mock ID: {id(mock_bg_tasks)}")
+            else:
+                  print("[Fixture client] !!! Override verification FAILED on test_client.app !!!")
+            # ---
+
+            # --- Yield the tuple ---
+            yield test_client, mock_bg_tasks
+            # ---
+            print("[Fixture client] TestClient context exit.")

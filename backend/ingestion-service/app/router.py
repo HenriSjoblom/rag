@@ -1,10 +1,11 @@
 import logging
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi.responses import JSONResponse
 
 from app.models import IngestionResponse, IngestionStatus
 from app.services.ingestion_processor import IngestionProcessorService
 from app.deps import get_ingestion_processor_service
-from app.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -35,16 +36,17 @@ def run_ingestion_background(service: IngestionProcessorService):
     status_code=status.HTTP_202_ACCEPTED, # Use 202 Accepted for background tasks
     summary="Trigger document ingestion process",
     description="Scans the configured source directory, processes documents, and stores them in the vector database. Runs as a background task.",
-    tags=["Ingestion"]
+    tags=["ingestion"]
 )
 async def trigger_ingestion(
-    background_tasks: BackgroundTasks, # Inject BackgroundTasks
-    service: IngestionProcessorService = Depends(get_ingestion_processor_service) # Inject service
+    background_tasks: BackgroundTasks,
+    service: IngestionProcessorService = Depends(get_ingestion_processor_service)
 ):
     """
     Triggers the document ingestion pipeline to run in the background.
     Prevents concurrent runs using a simple in-memory flag.
     """
+
     global is_ingesting
     if is_ingesting:
         logger.warning("Ingestion task is already running.")
@@ -53,16 +55,8 @@ async def trigger_ingestion(
             detail="An ingestion process is already running. Please wait for it to complete.",
         )
 
-    # Check if source directory exists before starting background task
-    source_path = Path(settings.SOURCE_DIRECTORY)
-    if not source_path.exists() or not source_path.is_dir():
-         logger.error(f"Ingestion trigger failed: Source directory '{source_path}' not found.")
-         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Source directory '{source_path}' not found or is not accessible.",
-         )
+    source_path = Path(service.settings.SOURCE_DIRECTORY)
 
-    # Check for documents (optional, provides better immediate feedback)
     try:
         # Simple check if any files exist directly within the source dir or subdirs
         # This doesn't guarantee they are loadable documents, just that it's not empty.
@@ -71,10 +65,21 @@ async def trigger_ingestion(
         if docs_found == 0:
             logger.warning(f"No documents found in source directory '{source_path}'. Ingestion not started.")
             # Return 200 OK instead of 202 as nothing will run in background
-            return IngestionResponse(
+            response_data = IngestionResponse(
                 status="No documents found",
                 documents_found=0,
-                message=f"No files found in the source directory: {source_path}"
+                message="No files found in the source directory"
+            )
+            simple_content = {
+                "status": "No documents found",
+                "documents_found": 0,
+                "message": "No files found in the source directory"
+            }
+            print(f"response_data: {response_data}")
+            return JSONResponse(
+                #content=response_data.model_dump(),
+                content=simple_content,
+                status_code=status.HTTP_200_OK
             )
     except Exception as e:
         logger.error(f"Error checking source directory contents: {e}")
@@ -83,14 +88,16 @@ async def trigger_ingestion(
             detail=f"Failed to check source directory contents: {e}"
         )
 
+    print(f"--- DEBUG [ENDPOINT]: id(background_tasks) = {id(background_tasks)}")
 
     # Set the lock and add the task to the background
     is_ingesting = True
     logger.info("Setting ingestion lock and adding task to background.")
     background_tasks.add_task(run_ingestion_background, service)
+    logger.info(f"Background ingestion task added. Found {docs_found} documents to process.")
 
     return IngestionResponse(
         status="Ingestion task started",
-        documents_found=docs_found, # Include the count found during the check
-        message=f"Processing documents from {settings.SOURCE_DIRECTORY} in the background."
+        documents_found=docs_found,
+        message=f"Processing documents in the background."
     )

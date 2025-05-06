@@ -4,13 +4,13 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 import chromadb
-from chromadb.config import Settings as ChromaSettings
+
 from langchain_community.document_loaders import (
     DirectoryLoader,
     UnstructuredFileLoader
 )
 from langchain_community.embeddings import SentenceTransformerEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
@@ -30,37 +30,19 @@ def get_chroma_client(settings: Settings) -> chromadb.ClientAPI:
     """Gets or creates a ChromaDB client based on settings."""
     global _chroma_client
     if _chroma_client is None:
-        logger.info(f"Initializing ChromaDB client (Mode: {settings.CHROMA_MODE})")
-        chroma_config = {}
-        if settings.CHROMA_MODE == 'local':
-            if not settings.CHROMA_LOCAL_PATH:
-                 raise ValueError("CHROMA_LOCAL_PATH is required for local mode but not set.")
-            chroma_config = {
-                "chroma_db_impl": "duckdb+parquet",
-                "persist_directory": settings.CHROMA_LOCAL_PATH,
-            }
-            logger.info(f"ChromaDB local persistence directory: {settings.CHROMA_LOCAL_PATH}")
-        elif settings.CHROMA_MODE in ('http', 'https'):
-            if not settings.CHROMA_HOST or not settings.CHROMA_PORT:
-                 raise ValueError("CHROMA_HOST and CHROMA_PORT are required for http/https mode.")
-            chroma_config = {
-                "chroma_api_impl": "rest",
-                "chroma_server_host": settings.CHROMA_HOST,
-                "chroma_server_port": settings.CHROMA_PORT,
-                # Add SSL settings here if using https
-            }
-            logger.info(f"ChromaDB server: {settings.CHROMA_HOST}:{settings.CHROMA_PORT}")
+        if settings.CHROMA_PATH:
+            logger.info(f"Initializing persistent ChromaDB client at path: {settings.CHROMA_PATH}")
+            try:
+                # Pass the path directly to the client constructor
+                _chroma_client = chromadb.PersistentClient(path=settings.CHROMA_PATH)
+                logger.info("Persistent ChromaDB client initialized successfully.")
+            except Exception as e:
+                logger.error(f"Failed to initialize persistent ChromaDB client at {settings.CHROMA_PATH}: {e}", exc_info=True)
+                _chroma_client = None # Ensure it's None if failed
+                raise RuntimeError(f"Failed to initialize ChromaDB client: {e}") from e
         else:
-             raise ValueError(f"Invalid CHROMA_MODE: {settings.CHROMA_MODE}")
+           raise ValueError("CHROMA_PATH is not set in settings. Cannot initialize ChromaDB client.")
 
-        chroma_settings_dict = {k: v for k, v in chroma_config.items() if v is not None}
-        try:
-            _chroma_client = chromadb.Client(ChromaSettings(**chroma_settings_dict))
-            logger.info("ChromaDB client initialized successfully.")
-        except Exception as e:
-            logger.error(f"Failed to initialize ChromaDB client: {e}", exc_info=True)
-            _chroma_client = None # Ensure it's None if failed
-            raise RuntimeError(f"Failed to initialize ChromaDB client: {e}") from e
     return _chroma_client
 
 def get_embedding_model(settings: Settings) -> SentenceTransformerEmbeddings:
