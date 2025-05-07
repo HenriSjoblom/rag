@@ -18,6 +18,7 @@ resolution-markers = [
 [manifest]
 members = [
     "api-gateway",
+    "generation-service",
     "ingestion-service",
     "rag",
     "rag-service",
@@ -903,6 +904,43 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/45/d8/8425e6ba5fcec61a1d16e41b1b71d2bf9344f1fe48012c2b48b9620feae5/fsspec-2025.3.2.tar.gz", hash = "sha256:e52c77ef398680bbd6a98c0e628fbc469491282981209907bbc8aea76a04fdc6", size = 299281 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/44/4b/e0cfc1a6f17e990f3e64b7d941ddc4acdc7b19d6edd51abf495f32b1a9e4/fsspec-2025.3.2-py3-none-any.whl", hash = "sha256:2daf8dc3d1dfa65b6aa37748d112773a7a08416f6c70d96b264c96476ecaf711", size = 194435 },
+]
+
+[[package]]
+name = "generation-service"
+version = "0.1.0"
+source = { virtual = "generation_service" }
+dependencies = [
+    { name = "fastapi", extra = ["standard"] },
+    { name = "langchain" },
+    { name = "langchain-openai" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "pytest-mock" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", extras = ["standard"], specifier = ">=0.115.6" },
+    { name = "langchain", specifier = ">=0.3.25" },
+    { name = "langchain-openai", specifier = ">=0.3.14" },
+    { name = "pydantic", specifier = ">=2.10.5" },
+    { name = "pydantic-settings", specifier = ">=2.7.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pytest", specifier = ">=8.3.4" },
+    { name = "pytest-mock", specifier = ">=3.14.0" },
+    { name = "ruff", specifier = ">=0.9.1" },
 ]
 
 [[package]]

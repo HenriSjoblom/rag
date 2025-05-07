@@ -1,25 +1,21 @@
 [project]
-name = "rag"
+name = "generation-service"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115.6",
+    "langchain>=0.3.25",
     "langchain-openai>=0.3.14",
+    "pydantic>=2.10.5",
+    "pydantic-settings>=2.7.1",
 ]
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.0.1",
+    "httpx>=0.28.1",
     "pytest>=8.3.4",
-    "pytest-asyncio>=0.26.0",
     "pytest-mock>=3.14.0",
-]
-lint = [
     "ruff>=0.9.1",
 ]
-
-[tool.uv.workspace]
-members = ["api_gateway", "rag_service", "retrieval_service", "ingestion-service", "generation_service"]
-

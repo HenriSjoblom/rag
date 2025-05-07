@@ -1,0 +1,93 @@
+services:
+  rag-service:
+    build:
+      context: ./rag-service
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./rag-service/.env
+    depends_on:
+      - retrieval-service
+      - generation-service
+      - ingestion-service
+    networks:
+      - rag_network
+    restart: always
+
+  retrieval-service:
+    build:
+      context: ./retrieval-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./retrieval-service/.env # Ensure CHROMA_MODE=http, CHROMA_HOST=chromadb, CHROMA_PORT=8000
+    volumes:
+      - ./retrieval-service/app:/app/app
+    depends_on:
+      - chromadb
+    networks:
+      - rag_network
+    restart: always
+
+  generation-service:
+    build:
+      context: ./generation-service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./llm-service/.env # Ensure OPENAI_API_KEY is set
+    volumes:
+      - ./llm-service/app:/app/app
+    networks:
+      - rag_network
+    restart: always
+
+  ingestion-service:
+    build:
+      context: ./ingestion-service
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    env_file:
+      - ./ingestion-service/.env # Ensure CHROMA_MODE=http, CHROMA_HOST=chromadb, CHROMA_PORT=8000
+                               # And SOURCE_DIRECTORY=/app/documents_to_ingest
+    volumes:
+      - ./ingestion-service/app:/app/app
+      # This volume is where the ingestion service will temporarily save files uploaded via its API.
+      # It's internal to the service's container or can be a named volume if persistence
+      # of these temporary files across container restarts is desired (usually not).
+      # If you still had a directory scan feature from host, you'd mount it here.
+      - ingestion_uploads_volume:/app/documents_to_ingest
+    depends_on:
+      - chromadb
+    networks:
+      - rag_network
+    restart: always
+
+  chromadb:
+    image: chromadb/chroma:0.5.0 # Use the desired ChromaDB version
+    ports:
+      - "8008:8000" # Expose ChromaDB on host port 8008
+    volumes:
+      - chroma_data_volume:/chroma/chroma # Persist ChromaDB data
+    environment:
+      - IS_PERSISTENT=TRUE # Ensure ChromaDB runs in persistent mode
+      - ANONYMIZED_TELEMETRY=FALSE # Optional: Disable telemetry
+    # Add other ChromaDB specific environment variables if needed
+    # e.g., ALLOW_RESET=TRUE (use with caution)
+    networks:
+      - rag_network
+    restart: always
+
+volumes:
+  chroma_data_volume: # Named volume for ChromaDB data persistence
+    driver: local
+  ingestion_uploads_volume: # Named volume for files temporarily saved by ingestion-service
+    driver: local
+
+networks:
+  rag_network:
+    driver: bridge
