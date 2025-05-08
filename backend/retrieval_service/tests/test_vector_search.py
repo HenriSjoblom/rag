@@ -1,8 +1,9 @@
 import pytest
-from unittest.mock import MagicMock, AsyncMock, ANY
+import pytest_asyncio
+from unittest.mock import MagicMock, AsyncMock, ANY, patch
 from fastapi import HTTPException
 
-from app.services.vector_search import VectorSearchService
+from app.services.vector_search import VectorSearchService, lifespan_retrieval_service
 from app.models import RetrievalResponse
 
 
@@ -176,3 +177,34 @@ async def test_add_documents_chroma_error(mock_embedding_model: MagicMock, mock_
         documents=doc_texts,
         embeddings=ANY
     )
+
+@pytest.mark.asyncio
+async def test_lifespan_retrieval_service_local_missing_path():
+    with patch("app.services.vector_search._embedding_model", None), \
+         patch("app.services.vector_search._chroma_client", None), \
+         patch("app.services.vector_search._chroma_collection", None):
+        with pytest.raises(ValueError, match="chroma_path is required for local mode."):
+            async with lifespan_retrieval_service(
+                app=None,
+                model_name="all-MiniLM-L6-v2",
+                chroma_mode="local",
+                chroma_path=None,  # Missing path
+                collection_name="test_collection",
+            ):
+                pass
+
+
+@pytest.mark.asyncio
+async def test_lifespan_retrieval_service_docker_missing_host():
+    with patch("app.services.vector_search._embedding_model", None), \
+         patch("app.services.vector_search._chroma_client", None), \
+         patch("app.services.vector_search._chroma_collection", None):
+        with pytest.raises(ValueError, match="chroma_host is required for docker mode."):
+            async with lifespan_retrieval_service(
+                app=None,
+                model_name="all-MiniLM-L6-v2",
+                chroma_mode="docker",
+                chroma_host=None,  # Missing host
+                collection_name="test_collection",
+            ):
+                pass

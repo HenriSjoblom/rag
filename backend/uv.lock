@@ -3560,6 +3560,9 @@ dependencies = [
 dev = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.2.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-mock" },
     { name = "ruff" },
 ]
 
@@ -3575,6 +3578,9 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "numpy", specifier = ">=1.26.4" },
+    { name = "pytest", specifier = ">=8.3.4" },
+    { name = "pytest-asyncio", specifier = ">=0.26.0" },
+    { name = "pytest-mock", specifier = ">=3.14.0" },
     { name = "ruff", specifier = ">=0.9.1" },
 ]
 

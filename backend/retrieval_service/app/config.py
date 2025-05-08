@@ -9,7 +9,12 @@ class Settings(BaseSettings):
     TOP_K_RESULTS: int = Field(5, gt=0, validation_alias='TOP_K_RESULTS') # Must be > 0
 
     # ChromaDB Settings
+    # Mode: local or docker
+    CHROMA_MODE: Literal["local", "docker"] = Field("local", validation_alias='CHROMA_MODE')
+    # For local mode
     CHROMA_PATH: Optional[str] = Field("./data/chroma_db", validation_alias='CHROMA_PATH')
+    # For docker mode
+    CHROMA_HOST: Optional[str] = Field("http://localhost:8010", validation_alias='CHROMA_HOST')
     CHROMA_COLLECTION_NAME: str = Field("support_docs", validation_alias='CHROMA_COLLECTION_NAME')
 
     model_config = SettingsConfigDict(

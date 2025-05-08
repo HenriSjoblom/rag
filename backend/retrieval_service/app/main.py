@@ -28,7 +28,9 @@ async def lifespan(app: FastAPI):
     async with lifespan_retrieval_service(
         app=app,
         model_name=settings.EMBEDDING_MODEL_NAME,
+        chroma_mode=settings.CHROMA_MODE,
         chroma_path=settings.CHROMA_PATH,
+        chroma_host=settings.CHROMA_HOST,
         collection_name=settings.CHROMA_COLLECTION_NAME
     ):
         logger.info("Retrieval service startup complete. Model and DB connection ready.")

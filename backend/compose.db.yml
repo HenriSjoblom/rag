@@ -14,7 +14,7 @@ services:
     networks:
       - internal
   server:
-    image: chromadb/chroma
+    image: chromadb/chroma:0.6.3
     volumes:
       - chroma_data:/data
     ports:
@@ -24,6 +24,7 @@ services:
     environment:
       - CHROMA_OPEN_TELEMETRY__ENDPOINT=http://otel-collector:4317/
       - CHROMA_OPEN_TELEMETRY__SERVICE_NAME=chroma
+      - ANONYMIZED_TELEMETRY=False
     depends_on:
       - otel-collector
       - zipkin
