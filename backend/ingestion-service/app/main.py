@@ -3,7 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from app.router import router as ingest_router
-from app.config import settings
+from app.deps import get_settings
 from app.services.ingestion_processor import get_embedding_model, get_chroma_client
 
 # Configure logging
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()
     logger.info("Ingestion Service starting up...")
     # Pre-load embedding model and Chroma client on startup
     try:

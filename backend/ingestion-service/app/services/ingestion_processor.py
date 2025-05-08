@@ -30,18 +30,25 @@ def get_chroma_client(settings: Settings) -> chromadb.ClientAPI:
     """Gets or creates a ChromaDB client based on settings."""
     global _chroma_client
     if _chroma_client is None:
-        if settings.CHROMA_PATH:
-            logger.info(f"Initializing persistent ChromaDB client at path: {settings.CHROMA_PATH}")
-            try:
-                # Pass the path directly to the client constructor
-                _chroma_client = chromadb.PersistentClient(path=settings.CHROMA_PATH)
-                logger.info("Persistent ChromaDB client initialized successfully.")
-            except Exception as e:
-                logger.error(f"Failed to initialize persistent ChromaDB client at {settings.CHROMA_PATH}: {e}", exc_info=True)
-                _chroma_client = None # Ensure it's None if failed
-                raise RuntimeError(f"Failed to initialize ChromaDB client: {e}") from e
+        chroma_mode = settings.CHROMA_MODE
+        if chroma_mode == "local":
+            chroma_path = settings.CHROMA_PATH
+            print(f"DEBUG: Connecting to local ChromaDB at path: {chroma_path}")
+            print(f"ChromaDB path: {chroma_path}")
+            if not chroma_path:
+                raise ValueError("chroma_path is required for local mode.")
+            _chroma_client = chromadb.PersistentClient(
+                path=chroma_path)
+
+        elif chroma_mode == "docker":
+            chroma_host = settings.CHROMA_HOST
+            print(f"DEBUG: Connecting to ChromaDB Docker container at host: {chroma_host}")
+            if not chroma_host:
+                raise ValueError("chroma_host is required for docker mode.")
+            print(f"ChromaDB host: {chroma_host}")
+            _chroma_client = chromadb.HttpClient(host=chroma_host)
         else:
-           raise ValueError("CHROMA_PATH is not set in settings. Cannot initialize ChromaDB client.")
+            raise ValueError(f"Invalid CHROMA_MODE: {chroma_mode}. Must be 'local' or 'docker'.")
 
     return _chroma_client
 
