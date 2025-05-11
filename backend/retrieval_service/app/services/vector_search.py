@@ -41,6 +41,7 @@ async def lifespan_retrieval_service(
     collection_name: str,
     chroma_path: Optional[str] = None,
     chroma_host: Optional[str] = None,
+    chroma_port: Optional[int] = None,
 ):
     """Manages the lifespan of embedding model and ChromaDB client."""
     global _embedding_model, _chroma_client, _chroma_collection
@@ -85,14 +86,23 @@ async def lifespan_retrieval_service(
         if not chroma_host:
             raise ValueError("chroma_host is required for docker mode.")
         print(f"ChromaDB host: {chroma_host}")
-        _chroma_client = chromadb.HttpClient(host=chroma_host)
+        print(f"ChromaDB port: {chroma_port}")
+        _chroma_client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
     else:
-        raise ValueError(f"Invalid CHROMA_MODE: {chroma_mode}. Must be 'local' or 'docker'.")
+        raise ValueError(
+            f"Invalid CHROMA_MODE: {chroma_mode}. Must be 'local' or 'docker'."
+        )
     print("ChromaDB client initialized.")
     try:
-        print(f"DEBUG: Creating or retrieving ChromaDB collection '{collection_name}'...")
-        _chroma_collection = _chroma_client.get_or_create_collection(name=collection_name)
-        print(f"DEBUG: ChromaDB collection '{_chroma_collection.name}' initialized successfully.")
+        print(
+            f"DEBUG: Creating or retrieving ChromaDB collection '{collection_name}'..."
+        )
+        _chroma_collection = _chroma_client.get_or_create_collection(
+            name=collection_name
+        )
+        print(
+            f"DEBUG: ChromaDB collection '{_chroma_collection.name}' initialized successfully."
+        )
     except Exception as e:
         print(f"ERROR: Failed to initialize ChromaDB collection: {e}")
         raise RuntimeError(f"Failed to initialize ChromaDB collection: {e}")

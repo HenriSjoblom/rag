@@ -4,9 +4,9 @@ services:
       context: ./generation_service
       dockerfile: Dockerfile
     ports:
-      - "8002:8002"
+      - "8003:8003"
     env_file:
-      - ./generation_service/.env
+      - ./generation_service/.env.solo
     volumes:
       - ./generation_service/app:/app/app
     restart: always

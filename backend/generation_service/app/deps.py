@@ -12,11 +12,11 @@ def get_settings() -> Settings:
 # This avoids re-initializing the LLM model on every request.
 # maxsize=1 effectively makes it a singleton within the running worker process.
 @lru_cache(maxsize=1)
-def get_generation_service(settings: Settings = Depends(get_settings)) -> GenerationService:
+def get_generation_service() -> GenerationService:
     """
     Provides a cached singleton instance of the GenerationService.
     Initializes the LLM client once per worker process.
     """
     print("Creating GenerationService instance (or retrieving from cache)...")
-    print(f"Settings in creating generation service used: {settings.LLM_PROVIDER}, {settings.LLM_MODEL_NAME}, {settings.CHROMA_PATH}, {settings.CHROMA_COLLECTION_NAME}")
-    return GenerationService(settings=settings)
+    print(f"Settings in creating generation service used: {global_settings.LLM_PROVIDER}, {global_settings.LLM_MODEL_NAME}")
+    return GenerationService(settings=global_settings)
