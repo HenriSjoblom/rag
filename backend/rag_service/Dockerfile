@@ -25,7 +25,7 @@ COPY ./app ./app
 COPY .env .
 
 # Expose the port the app runs on
-EXPOSE 8000
+EXPOSE 8001
 
 # Define the command to run the application
 # Use 0.0.0.0 to allow connections from outside the container

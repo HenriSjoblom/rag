@@ -1,0 +1,12 @@
+services:
+  generation-service:
+    build:
+      context: ./generation_service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./generation_service/.env
+    volumes:
+      - ./generation_service/app:/app/app
+    restart: always

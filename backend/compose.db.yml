@@ -13,12 +13,12 @@ services:
       - ${PWD}/otel-collector-config.yaml:/etc/otel-collector-config.yaml
     networks:
       - internal
-  server:
+  chromadb:
     image: chromadb/chroma:0.6.3
     volumes:
-      - chroma_data:/data
+      - chroma_data2:/data
     ports:
-      - "8010:8000"
+      - "8000:8000"
     networks:
       - internal
     environment:
@@ -31,6 +31,8 @@ services:
 
 networks:
   internal:
+    name: backend_internal
+    driver: bridge
 
 volumes:
-  chroma_data:
+  chroma_data2:

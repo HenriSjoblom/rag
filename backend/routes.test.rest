@@ -1,0 +1,26 @@
+
+@chromadb = http://localhost:8000
+@rag-service = http://localhost:8001
+@generator-service = http://localhost:8002
+@retriever-service = http://localhost:8003
+@ingestion-service = http://localhost:8004
+
+GET {{chromadb}}/api/v2/heartbeat
+###
+GET http://localhost:8010/api/v2/heartbeat
+###
+GET http://127.0.0.1:8000/api/v2/heartbeat
+
+###
+GET {{rag-service}}/health
+###
+GET {{generator-service}}/health
+###
+GET {{retriever-service}}/health
+###
+GET {{ingestion-service}}/health
+
+
+
+###
+POST {{ingestion-service}}/api/v1/ingest
