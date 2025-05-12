@@ -147,6 +147,11 @@ venv.bak/
 # mkdocs documentation
 /site
 
+# Ingestion service documents
+ingestion-service/documents/*
+!ingestion-service/documents/*/
+ingestion-service/test_documents/
+
 # mypy
 .mypy_cache/
 .dmypy.json

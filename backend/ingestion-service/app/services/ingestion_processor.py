@@ -197,37 +197,60 @@ class IngestionProcessorService:
             return []
 
     def _load_documents(self) -> List[Document]:
-        logger.info("Attempting to load a single test PDF.")
-
-        pdf_filename = "iphone_user_guide.pdf"
-
-        test_pdf_path_obj = self.source_directory / pdf_filename
-
-        logger.info(f"Checking for test PDF at: {test_pdf_path_obj}")
-
-        if not test_pdf_path_obj.exists():
-            logger.error(f"Test PDF not found at: {test_pdf_path_obj}")
-            return []
-
-        try:
-            loader = PyPDFLoader(str(test_pdf_path_obj))
-            logger.info(f"Loading single test PDF: {test_pdf_path_obj}")
-            documents = loader.load()
-            # Filter out documents with no content or only whitespace
-            valid_documents = [
-                doc
-                for doc in documents
-                if doc.page_content and doc.page_content.strip()
-            ]
-            logger.info(
-                f"Loaded {len(valid_documents)} valid document(s) from the single test PDF."
-            )
-            return valid_documents
-        except Exception as e:
+        """Loads all PDF documents from the source directory and its subdirectories."""
+        if not self.source_directory.exists() or not self.source_directory.is_dir():
             logger.error(
-                f"Error loading single test PDF {test_pdf_path_obj}: {e}", exc_info=True
+                f"Source directory not found or is not a directory: {self.source_directory}"
             )
             return []
+
+        logger.info(f"Loading all PDF documents from: {self.source_directory}")
+
+        all_documents: List[Document] = []
+        pdf_files_found = list(self.source_directory.rglob("*.pdf")) # Recursively find all .pdf files
+
+        if not pdf_files_found:
+            logger.warning(f"No PDF files found in {self.source_directory}")
+            return []
+
+        logger.info(f"Found {len(pdf_files_found)} PDF files to process.")
+
+        for pdf_path in pdf_files_found:
+            try:
+                logger.info(f"Loading PDF: {pdf_path}")
+                loader = PyPDFLoader(str(pdf_path))
+                documents_from_file = loader.load()
+
+                # Filter out documents with no content or only whitespace
+                valid_documents_from_file = [
+                    doc
+                    for doc in documents_from_file
+                    if doc.page_content and doc.page_content.strip()
+                ]
+
+                if valid_documents_from_file:
+                    all_documents.extend(valid_documents_from_file)
+                    logger.info(
+                        f"Loaded {len(valid_documents_from_file)} valid document(s) from {pdf_path}."
+                    )
+                else:
+                    logger.warning(f"No valid content extracted from {pdf_path}.")
+            except Exception as e:
+                logger.error(
+                    f"Error loading PDF document {pdf_path}: {e}", exc_info=True
+                )
+                # Optionally, continue to try loading other PDFs
+
+        if not all_documents:
+            logger.warning(
+                "No valid content could be extracted from any of the PDF files found."
+            )
+        else:
+            logger.info(
+                f"Successfully loaded a total of {len(all_documents)} valid document(s) from all PDF files."
+            )
+
+        return all_documents
 
     def _split_documents(self, documents: List[Document]) -> List[Document]:
         """Splits loaded documents into smaller chunks."""
