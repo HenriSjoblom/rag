@@ -58,6 +58,11 @@ Content-Type: application/pdf
 ------WebKitFormBoundary7MA4YWxkTrZu0gW--
 
 ###
+# @name ListSourceDocumentsIngestionService
+GET {{ingestion-service}}/api/v1/documents
+
+
+###
 # @name ClearIngestionCollection
 DELETE {{ingestion-service}}/api/v1/collection
 
