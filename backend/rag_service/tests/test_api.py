@@ -38,10 +38,9 @@ def test_handle_chat_message_success(
     assert data["bot_response"] == expected_bot_response
 
     expected_request_obj = ChatRequest(user_id="test_user_success", message="Hello RAG!")
-    # The first argument to the mocked method will be 'self' (the instance)
-    #mocked_process_message.assert_awaited_once_with(ANY, expected_request_obj)
+
     mocked_process_message.assert_awaited_once()
-     # Access arguments using .args and .kwargs from the call_args object
+
     actual_pos_args = mocked_process_message.call_args.args
     actual_kwargs = mocked_process_message.call_args.kwargs
 
@@ -130,17 +129,12 @@ def test_handle_chat_message_invalid_request_payload_missing_field(
 
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
     data = response.json()
-    # For debugging, you can print the exact error details:
-    # print("DEBUG: Validation error details:", data.get("detail"))
+
     assert "detail" in data
 
     found_error = any(
         # Check if 'message' is the field causing the error.
-        # Pydantic v2 loc for body fields is typically ['body', 'field_name']
-        # This check is somewhat lenient and should still work if loc is ['body', 'message']
         "message" in error.get("loc", []) and
-        # Correctly check for Pydantic v2's 'missing' type (lowercase)
-        # or fall back to Pydantic v1's 'value_error.missing'
         (error.get("type") == "missing" or error.get("type") == "value_error.missing")
         for error in data.get("detail", [])
     )

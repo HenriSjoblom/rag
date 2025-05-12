@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
-# Import HTTPException and status for the side_effect
+
 from fastapi import status, HTTPException
 from fastapi.testclient import TestClient
 

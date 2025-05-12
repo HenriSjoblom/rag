@@ -18,6 +18,9 @@ from app.services.ingestion_processor import (
     IngestionProcessorService,
     IngestionStatus,
 )
+from langchain_core.documents import Document
+from langchain_community.vectorstores import Chroma
+import chromadb
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 
@@ -39,7 +42,7 @@ def test_data_root() -> Path:
 @pytest.fixture(scope="session")
 def test_source_dir(test_data_root: Path) -> Path:
     """Creates a temporary directory for source documents."""
-    path = test_data_root / "documents"
+    path = test_data_root / "test_documents"
     path.mkdir(parents=True, exist_ok=True)
     # Create a dummy PDF file for testing load
     try:

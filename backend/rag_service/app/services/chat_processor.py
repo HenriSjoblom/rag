@@ -23,8 +23,10 @@ class ChatProcessorService:
 
     async def _call_retrieval_service(self, query: str) -> List[str]:
         """Calls the retrieval microservice."""
-        retrieval_url = f"{str(self.settings.RETRIEVAL_SERVICE_URL).rstrip('/')}/retrieve"
+        retrieval_url = f"{str(self.settings.RETRIEVAL_SERVICE_URL).rstrip('/')}/api/v1/retrieve"
         payload = RetrievalRequest(query=query)
+        print(f"Calling retrieval service at {retrieval_url} with payload: {payload.model_dump()}")
+        print(f"Payload model dump: {payload.model_dump_json(indent=2)}")
         try:
             response_data = await make_request(
                 client=self.http_client,
@@ -54,7 +56,7 @@ class ChatProcessorService:
 
     async def _call_generation_service(self, query: str, context_chunks: List[str]) -> str:
         """Calls the generation microservice."""
-        generation_url = f"{str(self.settings.GENERATION_SERVICE_URL).rstrip('/')}/generate" # Assuming /generate endpoint
+        generation_url = f"{str(self.settings.GENERATION_SERVICE_URL).rstrip('/')}/api/v1/generate" # Assuming /generate endpoint
         payload = GenerationRequest(query=query, context_chunks=context_chunks)
         try:
             response_data = await make_request(
