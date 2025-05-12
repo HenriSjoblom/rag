@@ -10,7 +10,7 @@ from app.models import (
     GenerationResponse,
     ChatRequest,
 )
-from .http_client import make_request, get_http_client
+from .http_client import make_request
 
 class ChatProcessorService:
     def __init__(

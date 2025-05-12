@@ -1,7 +1,8 @@
 import logging
-import os  # Add this import for file operations
+import os
 import shutil
 from pathlib import Path
+from typing import List
 
 import chromadb
 from fastapi import (
@@ -11,13 +12,18 @@ from fastapi import (
     File,
     HTTPException,
     UploadFile,
-    status,
+    status
 )
 from fastapi.responses import JSONResponse
 
 from app.config import Settings
 from app.deps import get_ingestion_processor_service, get_settings
-from app.models import IngestionResponse, IngestionStatus
+from app.models import (
+    DocumentDetail,
+    DocumentListResponse,
+    IngestionResponse,
+    IngestionStatus,
+)
 from app.services.ingestion_processor import (
     IngestionProcessorService,
     get_chroma_client,
@@ -187,6 +193,52 @@ async def trigger_ingestion(
     )
 
 
+@router.get(
+    "/documents",
+    response_model=DocumentListResponse,
+    summary="List PDF documents in the source directory",
+    description="Retrieves a list of all PDF documents found in the configured source directory.",
+    tags=["documents_management"],  # New tag or use existing like "ingestion"
+)
+async def list_source_documents(settings: Settings = Depends(get_settings)):
+    source_directory = Path(settings.SOURCE_DIRECTORY)
+    logger.info(f"Listing PDF documents from source directory: '{source_directory}'")
+
+    if not source_directory.exists() or not source_directory.is_dir():
+        logger.warning(
+            f"Source directory '{source_directory}' not found or is not a directory."
+        )
+        # Return empty list
+        return DocumentListResponse(
+            count=0, documents=[], source_directory=str(source_directory)
+        )
+
+    document_details: List[DocumentDetail] = []
+    try:
+        # Recursively find all .pdf files
+        pdf_files = list(source_directory.rglob("*.pdf"))
+        for pdf_file in pdf_files:
+            if pdf_file.is_file():  # Ensure it's a file
+                document_details.append(DocumentDetail(name=pdf_file.name))
+
+        logger.info(
+            f"Found {len(document_details)} PDF documents in '{source_directory}'."
+        )
+        return DocumentListResponse(
+            count=len(document_details),
+            documents=document_details,
+            source_directory=str(source_directory),
+        )
+    except Exception as e:
+        logger.error(
+            f"Error listing documents in '{source_directory}': {e}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list documents: {str(e)}",
+        )
+
+
 @router.delete(
     "/collection",
     status_code=status.HTTP_200_OK,
@@ -194,7 +246,7 @@ async def trigger_ingestion(
     description="Deletes the entire ChromaDB collection specified in the service settings AND all files in the source documents directory. This action is irreversible.",
     tags=["collection_management"],
 )
-async def clear_chroma_collection_and_documents(  # Renamed for clarity
+async def clear_chroma_collection_and_documents(
     settings: Settings = Depends(get_settings),
 ):
     """
@@ -210,7 +262,7 @@ async def clear_chroma_collection_and_documents(  # Renamed for clarity
     files_deleted_successfully = False
     messages = []
 
-    # 1. Delete files from the source directory
+    #Delete files from the source directory
     logger.info(
         f"Attempting to delete all files from source directory: '{source_directory}'"
     )
@@ -233,9 +285,7 @@ async def clear_chroma_collection_and_documents(  # Renamed for clarity
                         err_msg = f"Failed to delete file {item}: {e}"
                         logger.error(err_msg, exc_info=True)
                         messages.append(err_msg)
-                        # Continue trying to delete other files
-                # Optionally, handle subdirectories if needed (e.g., shutil.rmtree for subdirs)
-                # For now, only deleting files in the root of source_directory
+
 
             if not messages:  # If no errors during file deletion
                 files_deleted_successfully = True
@@ -252,7 +302,7 @@ async def clear_chroma_collection_and_documents(  # Renamed for clarity
             messages.append(err_msg)
             # Proceed to attempt collection deletion even if file deletion fails partially or fully
 
-    # 2. Delete ChromaDB collection
+    # Delete ChromaDB collection
     logger.info(f"Attempting to delete ChromaDB collection: '{collection_name}'")
     try:
         client = get_chroma_client(settings)
