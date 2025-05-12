@@ -199,7 +199,7 @@ class IngestionProcessorService:
     def _load_documents(self) -> List[Document]:
         logger.info("Attempting to load a single test PDF.")
 
-        pdf_filename = "iphone-16-info.pdf"
+        pdf_filename = "iphone_user_guide.pdf"
 
         test_pdf_path_obj = self.source_directory / pdf_filename
 

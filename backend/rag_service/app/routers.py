@@ -22,8 +22,8 @@ async def handle_chat_message(
     """
     try:
         print(f"Received chat request: {request}")
-        bot_message = await chat_service.process_message(request)
-        return ChatResponse(bot_response=bot_message)
+        response = await chat_service.process_message(request)
+        return ChatResponse(response=response)
     except HTTPException as e:
         # If the service layer raised an HTTPException, re-raise it
         raise e

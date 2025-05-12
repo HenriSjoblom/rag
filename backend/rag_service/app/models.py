@@ -25,4 +25,4 @@ class GenerationResponse(BaseModel):
 
 class ChatResponse(BaseModel):
     """Response model sent back to the client."""
-    bot_response: str
+    response: str
