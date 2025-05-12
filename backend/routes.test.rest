@@ -47,18 +47,6 @@ Content-Type: application/json
 
 
 ###
-POST {{generation-service}}/api/v1/generate
-Content-Type: application/json
-
-{
-    "query": "What key information is provided about iPhone's safety, potential for medical device interference, and regulatory compliance?",
-    "context_chunks": [
-        "sound and in “Important safety information” in the  \niPhone User Guide .\nMedical Device Interference\niPhone contains magnets as well as components and/\nor radios that may interfere with medical devices. See \n“Important safety information” in the iPhone User Guide .\nRegulatory\nRegulatory certification information is available on-device. \nGo to Settings > General > Legal & Regulatory. Additional \nregulatory information is in “Safety, handling, and \nsupport” in the iPhone User Guide .\nFCC and ISED Canada Compliance\nThis device complies with part 15 of the FCC Rules and \nISED Canada licence-exempt RSS standard(s). Operation"
-    ]
-}
-
-
-###
 POST {{rag-service}}/api/v1/chat
 Content-Type: application/json
 

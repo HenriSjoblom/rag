@@ -15,7 +15,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 # from langchain_community.document_loaders import (
 #    DirectoryLoader,
 # )
-from langchain_unstructured import UnstructuredLoader
+# from langchain_unstructured import UnstructuredLoader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -168,10 +168,10 @@ class IngestionProcessorService:
             logger.error(f"Error loading PDF documents: {e}", exc_info=True)
             return []  # Return empty list on failure
 
-    def _load_documents(self) -> List[Document]:
+    def _load_documents3(self) -> List[Document]:
         logger.info("Attempting to load a single test PDF.")
         # Replace with an actual path to a test PDF
-        test_pdf_path = r"C:\Users\henri\Documents\projektit\rag\backend\ingestion-service\documents\iphone-16-info.pdf"
+        test_pdf_path = r"app\documents\iphone-16-info.pdf"
         if not Path(test_pdf_path).exists():
             logger.error(f"Test PDF not found at: {test_pdf_path}")
             return []
@@ -193,6 +193,39 @@ class IngestionProcessorService:
         except Exception as e:
             logger.error(
                 f"Error loading single test PDF {test_pdf_path}: {e}", exc_info=True
+            )
+            return []
+
+    def _load_documents(self) -> List[Document]:
+        logger.info("Attempting to load a single test PDF.")
+
+        pdf_filename = "iphone-16-info.pdf"
+
+        test_pdf_path_obj = self.source_directory / pdf_filename
+
+        logger.info(f"Checking for test PDF at: {test_pdf_path_obj}")
+
+        if not test_pdf_path_obj.exists():
+            logger.error(f"Test PDF not found at: {test_pdf_path_obj}")
+            return []
+
+        try:
+            loader = PyPDFLoader(str(test_pdf_path_obj))
+            logger.info(f"Loading single test PDF: {test_pdf_path_obj}")
+            documents = loader.load()
+            # Filter out documents with no content or only whitespace
+            valid_documents = [
+                doc
+                for doc in documents
+                if doc.page_content and doc.page_content.strip()
+            ]
+            logger.info(
+                f"Loaded {len(valid_documents)} valid document(s) from the single test PDF."
+            )
+            return valid_documents
+        except Exception as e:
+            logger.error(
+                f"Error loading single test PDF {test_pdf_path_obj}: {e}", exc_info=True
             )
             return []
 

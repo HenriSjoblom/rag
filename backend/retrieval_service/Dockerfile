@@ -28,6 +28,6 @@ COPY ./app ./app
 # If CHROMA_LOCAL_PATH was relative like './data/chroma_db', it would be /app/data/chroma_db here.
 RUN mkdir -p /app/data/chroma_db && chown -R app:app /app/data/chroma_db
 
-EXPOSE 8003
+EXPOSE 8002
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002"]

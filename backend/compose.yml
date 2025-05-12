@@ -48,7 +48,7 @@ services:
       - ./ingestion-service/app:/app/app
       - ingestion_uploads:/app/documents
     depends_on:
-      - chromad
+      - chromadb
     restart: always
 
   zipkin:

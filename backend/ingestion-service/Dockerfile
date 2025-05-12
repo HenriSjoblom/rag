@@ -18,10 +18,7 @@ RUN apt-get update && \
 # Use cpu version of torch
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir \
-        opencv-python-headless==4.10 && \
-    pip install --no-cache-dir \
         torch==2.7.0+cpu \
-        torchvision==0.22.0+cpu \
         --index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir onnxruntime==1.19.2 && \
     pip install --no-cache-dir -r requirements.txt
