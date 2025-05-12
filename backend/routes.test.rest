@@ -71,3 +71,19 @@ Content-Type: application/json
     "message": "What key information is provided about iPhone's safety, potential for medical device interference, and regulatory compliance?"
 }
 
+
+###
+# @name UploadPdfViaRagService
+POST {{rag-service}}/api/v1/documents/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryRAGUpload
+
+------WebKitFormBoundaryRAGUpload
+Content-Disposition: form-data; name="file"; filename="iphone-16-info.pdf"
+Content-Type: application/pdf
+
+< ./ingestion-service/test_documents/iphone-16-info.pdf
+------WebKitFormBoundaryRAGUpload--
+
+
+###
+DELETE {{rag-service}}/api/v1/documents
