@@ -20,6 +20,7 @@ app = FastAPI(
     title="Chat API Service",
     description="Orchestrates RAG pipeline for the customer support chatbot.",
     version="1.0.0",
+    lifespan=lifespan
 )
 
 # Include API routers

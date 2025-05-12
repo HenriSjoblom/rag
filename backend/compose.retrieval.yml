@@ -1,0 +1,14 @@
+services:
+  retrieval-service:
+    build:
+      context: ./retrieval_service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./retrieval_service/.env.solo
+    restart: always
+
+networks:
+  backend_internal:
+    external: true
