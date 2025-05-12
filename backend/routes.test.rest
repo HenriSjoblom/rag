@@ -91,4 +91,8 @@ Content-Type: application/pdf
 
 
 ###
+# @name ListSourceDocumentsRagService
+GET {{rag-service}}/api/v1/documents
+
+###
 DELETE {{rag-service}}/api/v1/documents

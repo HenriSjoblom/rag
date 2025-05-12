@@ -12,8 +12,7 @@ from fastapi import (
     File,
     HTTPException,
     UploadFile,
-    status,
-    JSONResponse
+    status
 )
 from fastapi.responses import JSONResponse
 

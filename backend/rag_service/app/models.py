@@ -69,3 +69,13 @@ class IngestionDeleteResponse(BaseModel):
     files_deleted_count: Optional[int] = None
     collection_deleted: Optional[bool] = None
     source_files_cleared: Optional[bool] = None
+
+# Models for listing documents via RAG service
+class RagDocumentDetail(BaseModel):
+    name: str
+
+class RagDocumentListResponse(BaseModel):
+    count: int
+    documents: List[RagDocumentDetail]
+    source_directory: Optional[str] = None
+

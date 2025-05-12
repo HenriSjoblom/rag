@@ -1,6 +1,6 @@
 import logging
 
-import httpx  # Import httpx
+import httpx
 from fastapi import (
     APIRouter,
     Depends,
@@ -12,18 +12,20 @@ from fastapi import (
 
 from app.config import Settings
 from app.config import settings as app_settings
-from app.deps import (  # get_http_client returns httpx.AsyncClient
+from app.deps import (
     get_chat_processor_service,
     get_http_client,
 )
-from app.services.chat_processor import ChatProcessorService
 from app.models import (
     ChatRequest,
     ChatResponse,
     IngestionDeleteResponse,
     IngestionUploadResponse,
+    RagDocumentDetail,  # New
+    RagDocumentListResponse,  # New
     ServiceErrorResponse,
 )
+from app.services.chat_processor import ChatProcessorService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -77,6 +79,9 @@ async def process_chat_message(
         )
 
 
+# --- Ingestion Service Proxy Routes ---
+
+
 @router.post(
     "/documents/upload",
     response_model=IngestionUploadResponse,
@@ -101,8 +106,8 @@ async def process_chat_message(
 )
 async def upload_document_for_ingestion(
     file: UploadFile = File(..., description="PDF document to upload."),
-    http_client: httpx.AsyncClient = Depends(get_http_client),  # Use httpx.AsyncClient
-    settings: Settings = Depends(lambda: app_settings),  # Get settings instance
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(lambda: app_settings),
 ):
     if not file.filename:
         raise HTTPException(
@@ -164,6 +169,67 @@ async def upload_document_for_ingestion(
         await file.close()
 
 
+@router.get(
+    "/documents",
+    response_model=RagDocumentListResponse,
+    summary="List documents managed by the Ingestion Service",
+    description="Retrieves a list of documents by querying the Ingestion Service.",
+    tags=["documents", "ingestion"],
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ServiceErrorResponse,
+            "description": "Ingestion service is unavailable",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ServiceErrorResponse,
+            "description": "Error retrieving documents from ingestion service",
+        },
+    },
+)
+async def list_documents_via_ingestion_service(
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(lambda: app_settings),
+):
+    ingestion_service_docs_url = f"{settings.INGESTION_SERVICE_URL}api/v1/documents"
+    logger.info(
+        f"Requesting document list from Ingestion Service at {ingestion_service_docs_url}"
+    )
+
+    try:
+        response = await http_client.get(ingestion_service_docs_url)
+        response.raise_for_status()  # Raise an exception for 4XX/5XX responses
+
+        ingestion_response_data = response.json()
+        logger.info(
+            f"Successfully retrieved document list from Ingestion Service. Response: {ingestion_response_data}"
+        )
+
+        # Map to our RagDocumentListResponse model
+        # Assuming ingestion_response_data matches DocumentListResponse from ingestion-service
+        doc_details = [
+            RagDocumentDetail(name=doc.get("name"))
+            for doc in ingestion_response_data.get("documents", [])
+            if doc.get("name")  # Ensure name exists
+        ]
+
+        return RagDocumentListResponse(
+            count=ingestion_response_data.get("count", 0),
+            documents=doc_details,
+            source_directory=ingestion_response_data.get("source_directory"),
+        )
+    except HTTPException as http_exc:
+        logger.error(
+            f"HTTP error while requesting document list from Ingestion Service: {http_exc.status_code} - {http_exc.detail}"
+        )
+        raise http_exc
+    except Exception as e:
+        logger.exception(f"Error requesting document list from Ingestion Service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to connect or communicate with Ingestion Service: {str(e)}",
+        )
+
+
 @router.delete(
     "/documents",
     response_model=IngestionDeleteResponse,  # Use the new response model
@@ -182,8 +248,8 @@ async def upload_document_for_ingestion(
     },
 )
 async def delete_all_documents_and_ingested_data(
-    http_client: httpx.AsyncClient = Depends(get_http_client),  # Use httpx.AsyncClient
-    settings: Settings = Depends(lambda: app_settings),  # Get settings instance
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(lambda: app_settings),
 ):
     ingestion_service_delete_url = f"{settings.INGESTION_SERVICE_URL}api/v1/collection"
     logger.info(
