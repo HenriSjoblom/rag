@@ -4,11 +4,12 @@ import ChatInterface from './components/ChatInterface';
 
 function App() {
   return (
-    <div className="min-h-screen p-4 flex flex-col items-center">
-        <h1 className="text-3xl font-bold text-blue-600 mb-6">RAG Chat</h1>
-        <Routes>
-          <Route path="/" element={<ChatInterface />} />
-        </Routes>
+    <div className="flex flex-col min-h-screen bg-gray-100">
+        <main className="flex-grow container mx-auto p-4 flex">
+             <Routes>
+               <Route path="/" element={<ChatInterface />} />
+             </Routes>
+        </main>
     </div>
   );
 }
