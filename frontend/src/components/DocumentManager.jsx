@@ -1,22 +1,20 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   fetchUploadedDocumentName,
   uploadDocument,
   deleteUploadedDocument,
 } from "../services/api";
+import DocumentStatusDisplay from "./DocumentStatusDisplay";
+import DocumentUploadForm from "./DocumentUploadForm";
 
-function DocumentManager({
-  onDocumentNameChange, // Callback to inform parent about document name
-  onProcessingStateChange, // Callback to inform parent about processing state
-}) {
+function DocumentManager({ onDocumentNameChange, onProcessingStateChange }) {
   const [uploadedDocName, setUploadedDocName] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // Overall processing state for this manager
   const [docError, setDocError] = useState(null);
-  const [currentSelectedFile, setCurrentSelectedFile] = useState(null);
   const internalFileInputRef = useRef(null);
 
   const loadDocument = async () => {
-    console.log("DocumentManager: Fetching initial uploaded document...");
+    console.log("DocumentManager: Fetching document status...");
     setIsProcessing(true);
     onProcessingStateChange(true);
     setDocError(null);
@@ -37,47 +35,31 @@ function DocumentManager({
 
   useEffect(() => {
     loadDocument();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  // Adding onDocumentNameChange and onProcessingStateChange to deps can cause loops if not memoized by parent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleFileSelectInternal = (event) => {
-    const file = event.target.files[0];
-    if (file && file.type === "application/pdf") {
-      setCurrentSelectedFile(file);
-      setDocError(null);
-    } else {
-      setCurrentSelectedFile(null);
-      setDocError("Please select a PDF file.");
-    }
-  };
-
-  const handleFileUploadInternal = async () => {
-    if (!currentSelectedFile) {
-      setDocError("No file selected to upload.");
-      return;
-    }
+  const handleInitiateUpload = async (fileToUpload) => {
+    if (!fileToUpload) return;
 
     setIsProcessing(true);
     onProcessingStateChange(true);
     setDocError(null);
     try {
-      await uploadDocument(currentSelectedFile, uploadedDocName); // Pass current doc name for potential deletion
-      await loadDocument(); // Re-fetch to get the accurate name and update parent
-      setCurrentSelectedFile(null);
+      await uploadDocument(fileToUpload, uploadedDocName);
+      await loadDocument(); // Refresh document status
+      // Clear the file input in DocumentUploadForm
       if (internalFileInputRef.current) {
         internalFileInputRef.current.value = "";
       }
     } catch (err) {
       console.error("DocumentManager: Document upload failed:", err);
       setDocError(err.message || "An error occurred during upload.");
-      await loadDocument(); // Still try to load current state
-    } finally {
-      setIsProcessing(false);
-      onProcessingStateChange(false);
+      // Even on error, try to load the current state, as a partial operation might have occurred
+      await loadDocument();
     }
   };
 
-  const handleDeleteDocumentInternal = async () => {
+  const handleInitiateDelete = async () => {
     if (!uploadedDocName) return;
 
     setIsProcessing(true);
@@ -85,71 +67,29 @@ function DocumentManager({
     setDocError(null);
     try {
       await deleteUploadedDocument();
-      setUploadedDocName(null);
-      onDocumentNameChange(null);
-      setCurrentSelectedFile(null);
-      if (internalFileInputRef.current) {
-        internalFileInputRef.current.value = "";
-      }
+      await loadDocument(); // Refresh document status
       console.log("DocumentManager: Document deleted successfully.");
     } catch (err) {
       console.error("DocumentManager: Failed to delete document:", err);
       setDocError(err.message || "Could not delete document.");
-      await loadDocument(); // Still try to load current state
-    } finally {
-      setIsProcessing(false);
-      onProcessingStateChange(false);
+      await loadDocument(); // Refresh document status even on error
     }
   };
 
   return (
     <div className="p-3 border-b border-gray-200 bg-gray-50 text-sm">
-      {isProcessing && (
-        <p className="text-blue-600 animate-pulse">Processing document...</p>
-      )}
-      {docError && !isProcessing && (
-        <p className="text-red-600 py-1">Error: {docError}</p>
-      )}
-
-      {!isProcessing && uploadedDocName && (
-        <div className="flex items-center justify-between">
-          <p>
-            Current document:{" "}
-            <span className="font-semibold">{uploadedDocName}</span>
-          </p>
-          <button
-            onClick={handleDeleteDocumentInternal}
-            className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-xs"
-            disabled={isProcessing}
-          >
-            Remove
-          </button>
-        </div>
-      )}
-
-      {!isProcessing && !uploadedDocName && (
-        <p className="text-gray-600 py-1">
-          No document uploaded. Upload a PDF to ask questions about it.
-        </p>
-      )}
-
-      <div className="mt-2 flex items-center gap-2">
-        <input
-          type="file"
-          accept=".pdf"
-          onChange={handleFileSelectInternal}
-          ref={internalFileInputRef}
-          className="block w-full text-xs text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
-          disabled={isProcessing}
-        />
-        <button
-          onClick={handleFileUploadInternal}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs disabled:opacity-50"
-          disabled={!currentSelectedFile || isProcessing}
-        >
-          {uploadedDocName ? "Replace" : "Upload"}
-        </button>
-      </div>
+      <DocumentStatusDisplay
+        isParentProcessing={isProcessing}
+        docError={docError}
+        uploadedDocName={uploadedDocName}
+        onInitiateDelete={handleInitiateDelete}
+      />
+      <DocumentUploadForm
+        uploadedDocName={uploadedDocName}
+        isParentProcessing={isProcessing}
+        onInitiateUpload={handleInitiateUpload}
+        internalFileInputRef={internalFileInputRef}
+      />
     </div>
   );
 }

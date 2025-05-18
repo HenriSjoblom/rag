@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import ChatHeader from "./ChatHeader";
 import DocumentManager from "./DocumentManager";
 import ChatView from "./ChatView";
