@@ -3,6 +3,12 @@ import ChatHeader from "./ChatHeader";
 import DocumentManager from "./DocumentManager";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
+import {
+  fetchUploadedDocumentName,
+  uploadDocument,
+  deleteUploadedDocument,
+  sendChatMessage,
+} from "../services/api";
 
 function ChatInterface() {
   console.log("ChatInterface component rendered");
@@ -12,13 +18,10 @@ function ChatInterface() {
   const [error, setError] = useState(null);
 
   const [uploadedDocumentName, setUploadedDocumentName] = useState(null);
-  const [isDocumentProcessing, setIsDocumentProcessing] = useState(false); // For upload/delete loading
+  const [isDocumentProcessing, setIsDocumentProcessing] = useState(false);
   const [documentError, setDocumentError] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
-
-  const chatBackendUrl = "http://127.0.0.1:8001/api/v1/chat";
-  const documentsBaseUrl = "http://127.0.0.1:8001/api/v1/documents";
 
   const messagesEndRef = useRef(null);
 
@@ -30,32 +33,15 @@ function ChatInterface() {
     scrollToBottom();
   }, [messages, isLoading]);
 
-  // Fetch current document on mount
-  useEffect(() => {
-    console.log("Component mounted, fetching uploaded document...");
-    fetchUploadedDocument();
-  }, []);
-
-  const fetchUploadedDocument = async () => {
-    console.log("Fetching uploaded document...");
+  const loadInitialDocument = async () => {
+    console.log("ChatInterface: Fetching initial uploaded document...");
     setIsDocumentProcessing(true);
     setDocumentError(null);
     try {
-      const res = await fetch(documentsBaseUrl);
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(
-          errorData.detail || `Failed to fetch documents: ${res.status}`
-        );
-      }
-      const data = await res.json();
-      if (data.documents && data.documents.length > 0) {
-        setUploadedDocumentName(data.documents[0].name); // Assuming only one document as per requirement
-      } else {
-        setUploadedDocumentName(null);
-      }
+      const name = await fetchUploadedDocumentName();
+      setUploadedDocumentName(name);
     } catch (err) {
-      console.error("Failed to fetch document:", err);
+      console.error("ChatInterface: Failed to fetch document:", err);
       setDocumentError(err.message || "Could not check for existing document.");
       setUploadedDocumentName(null);
     } finally {
@@ -63,11 +49,15 @@ function ChatInterface() {
     }
   };
 
+  useEffect(() => {
+    loadInitialDocument();
+  }, []);
+
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (file && file.type === "application/pdf") {
       setSelectedFile(file);
-      setDocumentError(null); // Clear previous error
+      setDocumentError(null);
     } else {
       setSelectedFile(null);
       setDocumentError("Please select a PDF file.");
@@ -82,49 +72,20 @@ function ChatInterface() {
 
     setIsDocumentProcessing(true);
     setDocumentError(null);
-
     try {
-      // If a document already exists, delete it first to maintain the "only one document" rule
-      if (uploadedDocumentName) {
-        const deleteRes = await fetch(documentsBaseUrl, { method: "DELETE" });
-        if (!deleteRes.ok) {
-          const errorData = await deleteRes.json();
-          throw new Error(
-            errorData.detail ||
-              `Failed to remove existing document: ${deleteRes.status}`
-          );
-        }
-        setUploadedDocumentName(null); // Optimistically update
-        console.log("Existing document removed before new upload.");
-      }
-
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-
-      const uploadRes = await fetch(`${documentsBaseUrl}/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!uploadRes.ok) {
-        const errorData = await uploadRes.json();
-        throw new Error(
-          errorData.detail || `Failed to upload document: ${uploadRes.status}`
-        );
-      }
-
-      // const uploadData = await uploadRes.json(); // Keep if you need success message
-      await uploadRes.json(); // Consume the response body
-      await fetchUploadedDocument();
+      // The uploadDocument service function now handles deleting existing doc if necessary
+      await uploadDocument(selectedFile, uploadedDocumentName);
+      // After successful upload, refresh the document name
+      await loadInitialDocument(); // Re-fetch to get the accurate name
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-      // console.log("Document uploaded successfully:", uploadData.message);
     } catch (err) {
-      console.error("Document upload failed:", err);
+      console.error("ChatInterface: Document upload failed:", err);
       setDocumentError(err.message || "An error occurred during upload.");
-      await fetchUploadedDocument();
+      // Optionally, refresh document list even on failure to reflect actual state
+      await loadInitialDocument();
     } finally {
       setIsDocumentProcessing(false);
     }
@@ -136,22 +97,18 @@ function ChatInterface() {
     setIsDocumentProcessing(true);
     setDocumentError(null);
     try {
-      const res = await fetch(documentsBaseUrl, { method: "DELETE" });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(
-          errorData.detail || `Failed to delete document: ${res.status}`
-        );
-      }
-      setUploadedDocumentName(null);
+      await deleteUploadedDocument();
+      setUploadedDocumentName(null); // Optimistically update UI
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
-      console.log("Document deleted successfully.");
+      console.log("ChatInterface: Document deleted successfully.");
     } catch (err) {
-      console.error("Failed to delete document:", err);
+      console.error("ChatInterface: Failed to delete document:", err);
       setDocumentError(err.message || "Could not delete document.");
+      // Optionally, refresh document list even on failure
+      await loadInitialDocument();
     } finally {
       setIsDocumentProcessing(false);
     }
@@ -160,58 +117,35 @@ function ChatInterface() {
   const handleKeyDown = (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      handleSubmit(event);
+      handleSubmit(event); // Call the existing handleSubmit which now uses the service
     }
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     const currentQuery = query.trim();
-    if (!currentQuery || isLoading) return;
+    if (!currentQuery || isLoading || !uploadedDocumentName) return; // Ensure doc is uploaded
 
     setError(null);
-
     setMessages((prevMessages) => [
       ...prevMessages,
       { sender: "user", text: currentQuery },
     ]);
-
     setQuery("");
     setIsLoading(true);
 
     try {
-      const res = await fetch(chatBackendUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ message: currentQuery, user_id: "user_123" }),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.text(); // Use .text() for more robust error handling
-        let detail = errorData;
-        try {
-          const jsonData = JSON.parse(errorData); // Try to parse as JSON
-          detail = jsonData.detail || errorData;
-        } catch (e) {
-          // If not JSON, use the raw text
-        }
-        throw new Error(`HTTP error! Status: ${res.status} - ${detail}`);
-      }
-
-      const data = await res.json();
-      const aiResponse = data.response || "Sorry, I could not get a response.";
-
+      const aiResponse = await sendChatMessage(
+        currentQuery /*, "user_123" // userId can be passed if needed */
+      );
       setMessages((prevMessages) => [
         ...prevMessages,
         { sender: "ai", text: aiResponse },
       ]);
     } catch (err) {
-      console.error("Failed to fetch:", err);
+      console.error("ChatInterface: Failed to send/receive chat message:", err);
       const errorMessage = err.message || "Failed to connect to the backend.";
-      setError(errorMessage); // Set error state to display in MessageList
-  
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -233,7 +167,7 @@ function ChatInterface() {
       <MessageList
         messages={messages}
         isLoading={isLoading}
-        error={error} /* Pass the chat error here */
+        error={error}
         messagesEndRef={messagesEndRef}
       />
       <MessageInput
