@@ -1,14 +1,15 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from app.routers import router as rag_router
-from app.config import Settings
-from app.services.http_client import lifespan_http_client
-from app.deps import get_settings
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import Settings
+from app.deps import get_settings
+from app.routers import router as rag_router
+from app.services.http_client import lifespan_http_client
 
 settings: Settings = get_settings()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,22 +21,20 @@ app = FastAPI(
     title="Chat API Service",
     description="Orchestrates RAG pipeline for the customer support chatbot.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Include API routers
 app.include_router(rag_router, prefix="/api/v1")
 
 # Add cors middleware
-origins = [
-     "http://localhost:5173"
-]
+origins = ["http://localhost:5173"]
 app.add_middleware(
     CORSMiddleware,
-     allow_origins=origins,
-     allow_credentials=True,
-     allow_methods=["*"],
-     allow_headers=["*"],
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
