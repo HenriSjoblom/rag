@@ -16,8 +16,7 @@ def get_http_client() -> (
     Provides the globally managed httpx.AsyncClient instance
     as a FastAPI dependency.
     """
-    # This now calls the getter from http_client.py, which returns the instance
-    # initialized by the lifespan_http_client.
+
     return get_global_http_client()
 
 
@@ -36,9 +35,6 @@ def get_chat_processor_service(
     global _chat_processor_instance
     if _chat_processor_instance is None:
         if not settings.RETRIEVAL_SERVICE_URL or not settings.GENERATION_SERVICE_URL:
-            logger.error(
-                "RETRIEVAL_SERVICE_URL or GENERATION_SERVICE_URL is not configured."
-            )  # Added logger
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="RETRIEVAL_SERVICE_URL or GENERATION_SERVICE_URL is not configured.",

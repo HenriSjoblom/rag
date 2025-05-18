@@ -148,7 +148,8 @@ venv.bak/
 /site
 
 # Ingestion service documents
-ingestion-service/documents/*
+!ingestion-service/documents/*/
+ingestion-service/documents/
 !ingestion-service/documents/*/
 ingestion-service/test_documents/
 

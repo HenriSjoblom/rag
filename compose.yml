@@ -1,0 +1,93 @@
+services:
+  rag-service:
+  build:
+    context: ./rag_service
+    dockerfile: Dockerfile
+  ports:
+    - "8001:8001"
+  env_file: "./rag_service/.env"
+  depends_on:
+    - retrieval-service
+    - generation-service
+    - ingestion-service
+  restart: always
+
+retrieval-service:
+  build:
+    context: ./retrieval_service
+    dockerfile: Dockerfile
+  ports:
+    - "8002:8002"
+  env_file:
+    - ./retrieval_service/.env
+  depends_on:
+    - chromadb
+  restart: always
+
+generation-service:
+  build:
+    context: ./generation_service
+    dockerfile: Dockerfile
+  ports:
+    - "8003:8003"
+  env_file:
+    - ./generation_service/.env
+  volumes:
+    - ./generation_service/app:/app/app
+  restart: always
+
+ingestion-service:
+  build:
+    context: ./ingestion-service
+    dockerfile: Dockerfile
+  ports:
+    - "8004:8004"
+  env_file:
+    - ./ingestion-service/.env
+  volumes:
+    - ./ingestion-service/app:/app/app
+    - ingestion_uploads:/app/documents
+  depends_on:
+    - chromadb
+  restart: always
+
+zipkin:
+  image: openzipkin/zipkin
+  ports:
+    - "9411:9411"
+  depends_on: [otel-collector]
+
+otel-collector:
+  image: otel/opentelemetry-collector-contrib:0.111.0
+  command: ["--config=/etc/otel-collector-config.yaml"]
+  volumes:
+    - ${PWD}/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+
+chromadb:
+  image: chromadb/chroma:0.6.3
+  volumes:
+    - chroma_data:/data
+  ports:
+    - "8000:8000"
+  environment:
+    - CHROMA_OPEN_TELEMETRY__ENDPOINT=http://otel-collector:4317/
+    - CHROMA_OPEN_TELEMETRY__SERVICE_NAME=chroma
+    - ANONYMIZED_TELEMETRY=False
+  depends_on:
+    - otel-collector
+    - zipkin
+  restart: always
+frontend:
+  build:
+    context: .
+    dockerfile: Dockerfile
+  ports:
+    - "5173:80"
+  restart: always
+
+
+volumes:
+  chroma_data: # Named volume for ChromaDB data persistence
+    driver: local
+  ingestion_uploads: # Named volume for files temporarily saved by ingestion-service
+    driver: local
