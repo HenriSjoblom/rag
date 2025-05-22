@@ -4,10 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.deps import get_vector_search_service
 
-# Import the new models
 from app.models import (
-    AddDataRequest,
-    AddDataResponse,
     RetrievalRequest,
     RetrievalResponse,
 )
