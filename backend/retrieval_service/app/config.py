@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     CHROMA_COLLECTION_NAME: str = Field(
         "support_docs", validation_alias="CHROMA_COLLECTION_NAME"
     )
+    DISTANCE_THRESHOLD: float = Field(
+        default=1.0, description="Distance threshold for filtering search results"
+    )
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE_PATH, env_file_encoding="utf-8", extra="ignore"

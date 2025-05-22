@@ -18,13 +18,8 @@ async def lifespan(app: FastAPI):
     and clean up on shutdown.
     """
     settings = get_settings()
-    print(f"ChromaDB path: {settings.CHROMA_PATH}")
     logger.info("Retrieval service lifespan startup...")
     # Use the async context manager from vector_search service
-    print("Starting lifespan context manager...")
-    print(f"Model name: {settings.EMBEDDING_MODEL_NAME}")
-    print(f"Collection name: {settings.CHROMA_COLLECTION_NAME}")
-    print(f"ChromaDB path: {settings.CHROMA_PATH}")
     async with lifespan_retrieval_service(
         app=app,
         model_name=settings.EMBEDDING_MODEL_NAME,

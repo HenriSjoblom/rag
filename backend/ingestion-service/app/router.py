@@ -311,6 +311,12 @@ async def clear_chroma_collection_and_documents(
         msg = f"Successfully deleted ChromaDB collection: '{collection_name}'"
         logger.info(msg)
         messages.append(msg)
+        # Close ChromaDB client connection
+        try:
+            client.close()
+            logger.info("Closed ChromaDB client connection.")
+        except Exception as e:
+            logger.warning(f"Failed to close ChromaDB client: {e}")
 
         if global_vector_store_cache is not None:
             logger.info("Resetting cached LangChain Chroma vector store instance.")
