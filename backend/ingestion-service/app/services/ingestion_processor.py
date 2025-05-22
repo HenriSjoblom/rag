@@ -12,11 +12,6 @@ from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# from langchain_community.document_loaders import (
-#    DirectoryLoader,
-# )
-# from langchain_unstructured import UnstructuredLoader
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
