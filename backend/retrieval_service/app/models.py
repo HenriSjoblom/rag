@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict
+from typing import List
 
 class RetrievalRequest(BaseModel):
     """Request model for retrieving document chunks."""

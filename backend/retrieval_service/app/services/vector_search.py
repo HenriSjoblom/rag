@@ -44,7 +44,7 @@ async def get_chroma_client() -> (
 
 @asynccontextmanager
 async def lifespan_retrieval_service(
-    app,  # FastAPI app instance, often implicitly passed or not needed by user code
+    app,
     model_name: str,
     chroma_mode: str,
     collection_name: str,
@@ -53,7 +53,7 @@ async def lifespan_retrieval_service(
     chroma_port: Optional[int] = None,
 ):
     """Manages the lifespan of embedding model and ChromaDB client."""
-    global _embedding_model, _chroma_client, _chroma_collection  # _chroma_collection is for initial setup/check
+    global _embedding_model, _chroma_client, _chroma_collection
 
     # --- Idempotency Check for testing/hot-reloading ---
     if (
@@ -65,8 +65,6 @@ async def lifespan_retrieval_service(
         try:
             yield
         finally:
-            # In this scenario, we don't own the teardown if setup was skipped.
-            # However, for robust testing, ensure no old resources are accidentally reset.
             pass
         return
 
@@ -112,7 +110,6 @@ async def lifespan_retrieval_service(
 
     try:
         # Ensure collection is created with the same embedding function characteristics
-        # as the model_name we are using for explicit embeddings.
         chroma_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=model_name
         )
@@ -227,12 +224,11 @@ class VectorSearchService:
                     "documents",
                     "metadatas",
                     "distances",
-                ],  # Removed "ids" from here
+                ],
             )
             logger.debug(f"Raw ChromaDB query results: {results}")
 
             processed_chunks = []
-            # The results dictionary will still contain an 'ids' key at the top level
             if results and results.get("ids") and results["ids"][0]:
                 ids_list = results["ids"][0]
                 # Ensure other lists are handled safely if not included or empty
@@ -291,46 +287,4 @@ class VectorSearchService:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to query vector database: {str(e)}",
-            ) from e
-
-    async def add_documents(self, documents: Dict[str, str]) -> int:
-        collection = await self._get_fresh_collection()
-        if not documents:
-            logger.warning("Add documents called with an empty dictionary.")
-            return 0
-
-        doc_ids = list(documents.keys())
-        doc_texts = list(documents.values())
-        logger.info(
-            f"Adding {len(doc_ids)} documents to collection '{collection.name}' (ID: {collection.id})..."
-        )
-
-        try:
-            logger.debug("Generating embeddings for new documents...")
-            # SentenceTransformer.encode can be CPU-bound, run in thread
-            embeddings_np = await asyncio.to_thread(
-                self.embedding_model.encode, doc_texts
-            )
-            # Ensure embeddings are in the format List[List[float]]
-            embeddings_list = [emb.tolist() for emb in embeddings_np]
-            logger.debug(f"Generated {len(embeddings_list)} embeddings.")
-
-            await asyncio.to_thread(
-                collection.add,
-                ids=doc_ids,
-                documents=doc_texts,
-                embeddings=embeddings_list,
-            )
-            logger.info(
-                f"Successfully added/updated {len(doc_ids)} documents to collection '{collection.name}'."
-            )
-            return len(doc_ids)
-        except Exception as e:
-            logger.error(
-                f"Error adding documents to ChromaDB collection '{collection.name}': {e}",
-                exc_info=True,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to add documents to collection '{self.collection_name}': {e}",
             ) from e

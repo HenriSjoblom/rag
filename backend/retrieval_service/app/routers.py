@@ -30,7 +30,6 @@ async def retrieve_chunks(
     """
     Handles incoming requests to retrieve relevant document chunks.
     """
-    # logger.info(f"Router using collection: '{search_service.chroma_collection.name}' for retrieval") # This would error
     logger.info(
         f"Router using collection: '{search_service.collection_name}' for retrieval of query: '{request.query}'"
     )
@@ -51,7 +50,7 @@ async def retrieve_chunks(
     except Exception as e:
         logger.error(
             f"Unexpected error in retrieval endpoint: {e}", exc_info=True
-        )  # Use logger
+        ) 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal error occurred during retrieval.",
