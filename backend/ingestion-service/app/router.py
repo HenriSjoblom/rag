@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 from fastapi import (
     APIRouter,
@@ -125,14 +124,19 @@ async def upload_document_and_ingest(
 @router.post(
     "/ingest",
     response_model=IngestionResponse,
-    status_code=status.HTTP_202_ACCEPTED,  # Use 202 Accepted for background tasks
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Trigger document ingestion process",
     description="Scans the configured source directory, processes documents, and stores them in the vector database. Runs as a background task.",
     tags=["ingestion"],
 )
 async def trigger_ingestion(
     background_tasks: BackgroundTasks,
-    service: IngestionProcessorService = Depends(get_ingestion_processor_service),
+    ingestion_service: IngestionProcessorService = Depends(
+        get_ingestion_processor_service
+    ),
+    file_management_service: FileManagementService = Depends(
+        get_file_management_service
+    ),
 ):
     """
     Triggers the document ingestion pipeline to run in the background.
@@ -147,26 +151,16 @@ async def trigger_ingestion(
             detail="An ingestion process is already running. Please wait for it to complete.",
         )
 
-    is_ingesting = True  # Set the lock
+    is_ingesting = True
     logger.info("Setting ingestion lock and adding task to background.")
-    background_tasks.add_task(run_ingestion_background, service)
+    background_tasks.add_task(run_ingestion_background, ingestion_service)
 
-    # Attempt to count documents in the source directory for a more accurate response
-    docs_found_count = 0
-    try:
-        source_path = Path(service.settings.SOURCE_DIRECTORY)
-        if source_path.exists() and source_path.is_dir():
-            doc_files = list(
-                source_path.rglob("*.*")
-            )  # Consider only PDFs if that's what you process
-            docs_found_count = len([f for f in doc_files if f.is_file()])
-    except Exception as e:
-        logger.warning(f"Could not count documents in source directory: {e}")
-        # Fallback or leave as 0 if preferred when count fails
+    # Use FileManagementService to count documents
+    docs_found_count = file_management_service.count_documents()
 
     return IngestionResponse(
         status="Ingestion task started.",
-        documents_found=docs_found_count,  # Reflects count before ingestion starts
+        documents_found=docs_found_count,
         message="Processing documents in the background. Check logs for progress.",
     )
 

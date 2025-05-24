@@ -152,3 +152,19 @@ class FileManagementService:
         except Exception as e:
             logger.warning(f"Could not count documents in source directory: {e}")
             return 0
+
+    def count_all_files(self) -> int:
+        """
+        Counts all files in the source directory (not just PDFs).
+
+        Returns:
+            Number of files found
+        """
+        try:
+            if self.source_directory.exists() and self.source_directory.is_dir():
+                all_files = list(self.source_directory.rglob("*.*"))
+                return len([f for f in all_files if f.is_file()])
+            return 0
+        except Exception as e:
+            logger.warning(f"Could not count all files in source directory: {e}")
+            return 0
