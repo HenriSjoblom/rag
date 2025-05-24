@@ -96,3 +96,11 @@ GET {{rag-service}}/api/v1/documents
 
 ###
 DELETE {{rag-service}}/api/v1/documents
+
+###
+# @name GetIngestionStatus
+GET {{ingestion-service}}/api/v1/status
+
+###
+# @name GetIngestionStatusViaRagService
+GET {{rag-service}}/api/v1/documents/status

@@ -1,10 +1,5 @@
 import logging
-import os
-import shutil
-from pathlib import Path
-from typing import List
 
-import chromadb
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -12,37 +7,45 @@ from fastapi import (
     File,
     HTTPException,
     UploadFile,
-    status
+    status,
 )
 from fastapi.responses import JSONResponse
 
-from app.config import Settings
-from app.deps import get_ingestion_processor_service, get_settings
+from app.deps import (
+    get_collection_manager_service,
+    get_file_management_service,
+    get_ingestion_processor_service,
+    get_ingestion_state_service,
+)
 from app.models import (
-    DocumentDetail,
     DocumentListResponse,
     IngestionResponse,
     IngestionStatus,
+    IngestionStatusResponse,
 )
+from app.services.collection_manager import CollectionManagerService
+from app.services.file_management import FileManagementService
 from app.services.ingestion_processor import (
     IngestionProcessorService,
-    get_chroma_client,
 )
-from app.services.ingestion_processor import _vector_store as global_vector_store_cache
+from app.services.ingestion_state import IngestionStateService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-is_ingesting = False
 
-
-def run_ingestion_background(service: IngestionProcessorService):
-    """Wrapper function to run ingestion and handle the lock."""
-    global is_ingesting
+async def run_ingestion_background(
+    ingestion_service: IngestionProcessorService, state_service: IngestionStateService
+):
+    """Wrapper function to run ingestion and handle the state."""
+    result = None
+    errors = []
     try:
         logger.info("Background ingestion task started.")
-        ingestion_status: IngestionStatus = service.run_ingestion()
+        ingestion_status: IngestionStatus = ingestion_service.run_ingestion()
+        result = ingestion_status
         if ingestion_status.errors:
+            errors = ingestion_status.errors
             logger.error(
                 f"Background ingestion task finished with errors: {ingestion_status.errors}"
             )
@@ -52,9 +55,10 @@ def run_ingestion_background(service: IngestionProcessorService):
             )
     except Exception as e:
         logger.error(f"Exception during background ingestion task: {e}", exc_info=True)
+        errors = [str(e)]
     finally:
-        is_ingesting = False  # Release the lock
-        logger.info("Ingestion lock released.")
+        await state_service.stop_ingestion(result=result, errors=errors)
+        logger.info("Ingestion task completed and state released.")
 
 
 @router.post(
@@ -68,74 +72,56 @@ def run_ingestion_background(service: IngestionProcessorService):
 async def upload_document_and_ingest(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="PDF document to upload."),
-    service: IngestionProcessorService = Depends(get_ingestion_processor_service),
+    ingestion_service: IngestionProcessorService = Depends(
+        get_ingestion_processor_service
+    ),
+    file_management_service: FileManagementService = Depends(
+        get_file_management_service
+    ),
+    state_service: IngestionStateService = Depends(get_ingestion_state_service),
 ):
-    global is_ingesting
-    if is_ingesting:
+    if await state_service.is_ingesting():
         logger.warning("Upload attempt while ingestion task is already running.")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An ingestion process is already running. Please wait for it to complete before uploading and triggering a new one.",
         )
 
-    if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No filename provided with the uploaded file.",
-        )
-
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file type. Only PDF documents are allowed.",
-        )
-
-    source_path = Path(service.settings.SOURCE_DIRECTORY)
-    if not source_path.exists() or not source_path.is_dir():
-        logger.error(
-            f"Source directory {source_path} does not exist or is not a directory. Cannot save uploaded file."
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: Source directory for uploads not found.",
-        )
-
-    # Ensure the directory exists (it should, but defensive check)
-    source_path.mkdir(parents=True, exist_ok=True)
-
-    file_location = source_path / file.filename
-
     try:
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        logger.info(f"Successfully uploaded file: {file.filename} to {file_location}")
+        # Use the FileManagementService to save the file
+        file_location = await file_management_service.save_uploaded_file(file)
+        logger.info(
+            f"File '{file.filename}' processed by FileManagementService and saved to '{file_location}'"
+        )
+    except HTTPException:
+        # Re-raise HTTPException from the service to be returned to the client
+        raise
     except Exception as e:
+        # Catch any other unexpected errors from the service
         logger.error(
-            f"Failed to save uploaded file {file.filename}: {e}", exc_info=True
+            f"Unexpected error during file save operation via service: {e}",
+            exc_info=True,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save uploaded file: {e}",
+            detail="An unexpected error occurred while saving the file.",
         )
     finally:
         await file.close()  # Ensure the uploaded file is closed
 
-    # Set the lock and add the task to the background
-    is_ingesting = True
-    logger.info(
-        "Setting ingestion lock and adding task to background after file upload."
-    )
-    background_tasks.add_task(run_ingestion_background, service)
-
-    docs_found_count = 0
-    try:
-        doc_files = list(source_path.rglob("*.*"))
-        docs_found_count = len([f for f in doc_files if f.is_file()])
-    except Exception as e:
-        logger.warning(
-            f"Could not count documents in source directory after upload: {e}. Reporting based on upload."
+    # Start ingestion
+    if not await state_service.start_ingestion():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to start ingestion - another process may have started.",
         )
-        docs_found_count = 1  # At least the uploaded file is there
+
+    logger.info("Starting background ingestion task after file upload.")
+    background_tasks.add_task(
+        run_ingestion_background, ingestion_service, state_service
+    )
+
+    docs_found_count = file_management_service.count_documents()
 
     return IngestionResponse(
         status="File uploaded and ingestion task started.",
@@ -147,48 +133,49 @@ async def upload_document_and_ingest(
 @router.post(
     "/ingest",
     response_model=IngestionResponse,
-    status_code=status.HTTP_202_ACCEPTED,  # Use 202 Accepted for background tasks
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Trigger document ingestion process",
     description="Scans the configured source directory, processes documents, and stores them in the vector database. Runs as a background task.",
     tags=["ingestion"],
 )
 async def trigger_ingestion(
     background_tasks: BackgroundTasks,
-    service: IngestionProcessorService = Depends(get_ingestion_processor_service),
+    ingestion_service: IngestionProcessorService = Depends(
+        get_ingestion_processor_service
+    ),
+    file_management_service: FileManagementService = Depends(
+        get_file_management_service
+    ),
+    state_service: IngestionStateService = Depends(get_ingestion_state_service),
 ):
     """
     Triggers the document ingestion pipeline to run in the background.
-    Prevents concurrent runs using a simple in-memory flag.
+    Prevents concurrent runs using proper state management.
     """
-
-    global is_ingesting
-    if is_ingesting:
+    if await state_service.is_ingesting():
         logger.warning("Ingestion task is already running.")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An ingestion process is already running. Please wait for it to complete.",
         )
 
-    is_ingesting = True  # Set the lock
-    logger.info("Setting ingestion lock and adding task to background.")
-    background_tasks.add_task(run_ingestion_background, service)
+    if not await state_service.start_ingestion():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to start ingestion - another process may have started.",
+        )
 
-    # Attempt to count documents in the source directory for a more accurate response
-    docs_found_count = 0
-    try:
-        source_path = Path(service.settings.SOURCE_DIRECTORY)
-        if source_path.exists() and source_path.is_dir():
-            doc_files = list(
-                source_path.rglob("*.*")
-            )  # Consider only PDFs if that's what you process
-            docs_found_count = len([f for f in doc_files if f.is_file()])
-    except Exception as e:
-        logger.warning(f"Could not count documents in source directory: {e}")
-        # Fallback or leave as 0 if preferred when count fails
+    logger.info("Starting background ingestion task.")
+    background_tasks.add_task(
+        run_ingestion_background, ingestion_service, state_service
+    )
+
+    # Use FileManagementService to count documents
+    docs_found_count = file_management_service.count_documents()
 
     return IngestionResponse(
         status="Ingestion task started.",
-        documents_found=docs_found_count,  # Reflects count before ingestion starts
+        documents_found=docs_found_count,
         message="Processing documents in the background. Check logs for progress.",
     )
 
@@ -198,44 +185,27 @@ async def trigger_ingestion(
     response_model=DocumentListResponse,
     summary="List PDF documents in the source directory",
     description="Retrieves a list of all PDF documents found in the configured source directory.",
-    tags=["documents_management"],  # New tag or use existing like "ingestion"
+    tags=["documents_management"],
 )
-async def list_source_documents(settings: Settings = Depends(get_settings)):
-    source_directory = Path(settings.SOURCE_DIRECTORY)
-    logger.info(f"Listing PDF documents from source directory: '{source_directory}'")
-
-    if not source_directory.exists() or not source_directory.is_dir():
-        logger.warning(
-            f"Source directory '{source_directory}' not found or is not a directory."
-        )
-        # Return empty list
-        return DocumentListResponse(
-            count=0, documents=[], source_directory=str(source_directory)
-        )
-
-    document_details: List[DocumentDetail] = []
+async def list_source_documents(
+    file_management_service: FileManagementService = Depends(
+        get_file_management_service
+    ),
+):
+    """Lists all PDF documents in the configured source directory."""
     try:
-        # Recursively find all .pdf files
-        pdf_files = list(source_directory.rglob("*.pdf"))
-        for pdf_file in pdf_files:
-            if pdf_file.is_file():  # Ensure it's a file
-                document_details.append(DocumentDetail(name=pdf_file.name))
-
-        logger.info(
-            f"Found {len(document_details)} PDF documents in '{source_directory}'."
-        )
-        return DocumentListResponse(
-            count=len(document_details),
-            documents=document_details,
-            source_directory=str(source_directory),
-        )
-    except Exception as e:
-        logger.error(
-            f"Error listing documents in '{source_directory}': {e}", exc_info=True
-        )
+        return file_management_service.list_documents()
+    except RuntimeError as e:
+        logger.error(f"Service error while listing documents: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list documents: {str(e)}",
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error while listing documents: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while listing documents.",
         )
 
 
@@ -247,108 +217,26 @@ async def list_source_documents(settings: Settings = Depends(get_settings)):
     tags=["collection_management"],
 )
 async def clear_chroma_collection_and_documents(
-    settings: Settings = Depends(get_settings),
+    collection_service: CollectionManagerService = Depends(
+        get_collection_manager_service
+    ),
 ):
     """
     Deletes the configured ChromaDB collection and all files in the source documents directory.
     Resets the cached vector store instance.
     """
-    global global_vector_store_cache
+    logger.info("Starting collection and source files cleanup operation.")
 
-    collection_name = settings.CHROMA_COLLECTION_NAME
-    source_directory = Path(settings.SOURCE_DIRECTORY)
-    deleted_files_count = 0
-    collection_deleted_successfully = False
-    files_deleted_successfully = False
-    messages = []
+    result = collection_service.clear_all()
 
-    #Delete files from the source directory
-    logger.info(
-        f"Attempting to delete all files from source directory: '{source_directory}'"
-    )
-    if not source_directory.exists() or not source_directory.is_dir():
-        message = f"Source directory '{source_directory}' not found or is not a directory. No files deleted."
-        logger.warning(message)
-        messages.append(message)
-        files_deleted_successfully = (
-            True  # Considered success as there's nothing to delete
-        )
-    else:
-        try:
-            for item in source_directory.iterdir():
-                if item.is_file():
-                    try:
-                        os.remove(item)
-                        deleted_files_count += 1
-                        logger.debug(f"Deleted file: {item}")
-                    except Exception as e:
-                        err_msg = f"Failed to delete file {item}: {e}"
-                        logger.error(err_msg, exc_info=True)
-                        messages.append(err_msg)
-
-
-            if not messages:  # If no errors during file deletion
-                files_deleted_successfully = True
-
-            log_msg = f"Successfully deleted {deleted_files_count} file(s) from '{source_directory}'."
-            logger.info(log_msg)
-            messages.append(log_msg)
-
-        except Exception as e:
-            err_msg = (
-                f"An error occurred while deleting files from '{source_directory}': {e}"
-            )
-            logger.error(err_msg, exc_info=True)
-            messages.append(err_msg)
-            # Proceed to attempt collection deletion even if file deletion fails partially or fully
-
-    # Delete ChromaDB collection
-    logger.info(f"Attempting to delete ChromaDB collection: '{collection_name}'")
-    try:
-        client = get_chroma_client(settings)
-        client.delete_collection(name=collection_name)
-        collection_deleted_successfully = True
-        msg = f"Successfully deleted ChromaDB collection: '{collection_name}'"
-        logger.info(msg)
-        messages.append(msg)
-        # Close ChromaDB client connection
-        try:
-            client.close()
-            logger.info("Closed ChromaDB client connection.")
-        except Exception as e:
-            logger.warning(f"Failed to close ChromaDB client: {e}")
-
-        if global_vector_store_cache is not None:
-            logger.info("Resetting cached LangChain Chroma vector store instance.")
-            global_vector_store_cache = None
-
-    except chromadb.errors.NotACollectionError:
-        collection_deleted_successfully = (
-            True  # Desired state (collection doesn't exist)
-        )
-        msg = f"Collection '{collection_name}' not found. No deletion performed."
-        logger.info(msg)
-        messages.append(msg)
-        if global_vector_store_cache is not None:
-            logger.info(
-                "Resetting cached LangChain Chroma vector store instance (collection not found)."
-            )
-            global_vector_store_cache = None
-    except Exception as e:
-        err_msg = f"Failed to delete collection '{collection_name}': {e}"
-        logger.error(err_msg, exc_info=True)
-        messages.append(err_msg)
-
-    # Determine overall status
-    if collection_deleted_successfully and files_deleted_successfully:
+    # Determine HTTP status code based on results
+    if result["overall_success"]:
         final_status_code = status.HTTP_200_OK
         final_message = "ChromaDB collection and source documents cleared successfully."
-    elif (
-        collection_deleted_successfully or files_deleted_successfully
-    ):  # Partial success
+    elif result["collection_deleted"] or result["source_files_cleared"]:
         final_status_code = status.HTTP_207_MULTI_STATUS
         final_message = "Partial success in clearing resources. Check details."
-    else:  # Both failed or had significant errors
+    else:
         final_status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         final_message = "Failed to clear ChromaDB collection and/or source documents."
 
@@ -356,9 +244,23 @@ async def clear_chroma_collection_and_documents(
         status_code=final_status_code,
         content={
             "message": final_message,
-            "details": messages,
-            "files_deleted_count": deleted_files_count,
-            "collection_deleted": collection_deleted_successfully,
-            "source_files_cleared": files_deleted_successfully,
+            "details": result["messages"],
+            "files_deleted_count": result["files_deleted_count"],
+            "collection_deleted": result["collection_deleted"],
+            "source_files_cleared": result["source_files_cleared"],
         },
     )
+
+@router.get(
+    "/status",
+    response_model=IngestionStatusResponse,
+    summary="Get ingestion status",
+    description="Returns the current status of ingestion process including completion details.",
+    tags=["ingestion"],
+)
+async def get_ingestion_status(
+    state_service: IngestionStateService = Depends(get_ingestion_state_service),
+):
+    """Get the current ingestion status."""
+    status_info = await state_service.get_status()
+    return IngestionStatusResponse(**status_info)

@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from pydantic import AnyHttpUrl, Field
@@ -6,6 +7,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 CONFIG_FILE_PATH = Path(__file__).resolve()
 SERVICE_ROOT_DIR = CONFIG_FILE_PATH.parent.parent
 ENV_FILE_PATH = SERVICE_ROOT_DIR / ".env"
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -18,7 +23,7 @@ class Settings(BaseSettings):
         ..., validation_alias="GENERATION_SERVICE_URL"
     )
     INGESTION_SERVICE_URL: AnyHttpUrl = Field(
-        ..., validation_alias="INGESTION_SERVICE_URL"
+        validation_alias="INGESTION_SERVICE_URL",
     )
     HTTP_CLIENT_TIMEOUT: float = 10.0
 

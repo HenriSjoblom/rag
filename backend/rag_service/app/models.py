@@ -70,12 +70,23 @@ class IngestionDeleteResponse(BaseModel):
     collection_deleted: Optional[bool] = None
     source_files_cleared: Optional[bool] = None
 
+
+class IngestionStatusResponse(BaseModel):
+    is_processing: bool
+    status: str
+    last_completed: Optional[str] = None
+    documents_processed: Optional[int] = None
+    chunks_added: Optional[int] = None
+    errors: Optional[List[str]] = None
+    completion_time: Optional[str] = None
+
+
 # Models for listing documents via RAG service
 class RagDocumentDetail(BaseModel):
     name: str
+
 
 class RagDocumentListResponse(BaseModel):
     count: int
     documents: List[RagDocumentDetail]
     source_directory: Optional[str] = None
-
