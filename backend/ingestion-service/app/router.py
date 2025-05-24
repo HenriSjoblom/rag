@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 from typing import List
 
@@ -14,9 +13,9 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
-import app.services.ingestion_processor as ingestion_processor_module
 from app.config import Settings
 from app.deps import (
+    get_collection_manager_service,
     get_file_upload_service,
     get_ingestion_processor_service,
     get_settings,
@@ -27,10 +26,10 @@ from app.models import (
     IngestionResponse,
     IngestionStatus,
 )
+from app.services.collection_manager import CollectionManagerService
 from app.services.file_uploader import FileUploadService
 from app.services.ingestion_processor import (
     IngestionProcessorService,
-    get_chroma_client,
 )
 
 logger = logging.getLogger(__name__)
@@ -245,115 +244,26 @@ async def list_source_documents(settings: Settings = Depends(get_settings)):
     tags=["collection_management"],
 )
 async def clear_chroma_collection_and_documents(
-    settings: Settings = Depends(get_settings),
+    collection_service: CollectionManagerService = Depends(
+        get_collection_manager_service
+    ),
 ):
     """
     Deletes the configured ChromaDB collection and all files in the source documents directory.
     Resets the cached vector store instance.
     """
-    global global_vector_store_cache
+    logger.info("Starting collection and source files cleanup operation.")
 
-    collection_name = settings.CHROMA_COLLECTION_NAME
-    source_directory = Path(settings.SOURCE_DIRECTORY)
-    deleted_files_count = 0
-    collection_deleted_successfully = False
-    files_deleted_successfully = False
-    messages = []
+    result = collection_service.clear_all()
 
-    # Delete files from the source directory
-    logger.info(
-        f"Attempting to delete all files from source directory: '{source_directory}'"
-    )
-    if not source_directory.exists() or not source_directory.is_dir():
-        message = f"Source directory '{source_directory}' not found or is not a directory. No files deleted."
-        logger.warning(message)
-        messages.append(message)
-        files_deleted_successfully = (
-            True  # Considered success as there's nothing to delete
-        )
-    else:
-        try:
-            for item in source_directory.iterdir():
-                if item.is_file():
-                    try:
-                        os.remove(item)
-                        deleted_files_count += 1
-                        logger.debug(f"Deleted file: {item}")
-                    except Exception as e:
-                        err_msg = f"Failed to delete file {item}: {e}"
-                        logger.error(err_msg, exc_info=True)
-                        messages.append(err_msg)
-
-            if not messages:  # If no errors during file deletion
-                files_deleted_successfully = True
-
-            log_msg = f"Successfully deleted {deleted_files_count} file(s) from '{source_directory}'."
-            logger.info(log_msg)
-            messages.append(log_msg)
-
-        except Exception as e:
-            err_msg = (
-                f"An error occurred while deleting files from '{source_directory}': {e}"
-            )
-            logger.error(err_msg, exc_info=True)
-            messages.append(err_msg)
-
-    # Delete ChromaDB collection
-    logger.info(f"Attempting to delete ChromaDB collection: '{collection_name}'")
-    try:
-        client = get_chroma_client(settings)
-        client.delete_collection(name=collection_name)
-        collection_deleted_successfully = True
-        msg = f"Successfully deleted ChromaDB collection: '{collection_name}'"
-        logger.info(msg)
-        messages.append(msg)
-
-        if global_vector_store_cache is not None:
-            logger.info("Resetting cached LangChain Chroma vector store instance.")
-            global_vector_store_cache = None
-
-        # Also reset the actual vector store cache in the ingestion processor
-        ingestion_processor_module._vector_store = None
-
-    except Exception as e:
-        # Check if the error is about collection not existing
-        error_str = str(e).lower()
-        if (
-            "not found" in error_str
-            or "does not exist" in error_str
-            or "collection" in error_str
-        ):
-            collection_deleted_successfully = (
-                True  # Desired state (collection doesn't exist)
-            )
-            msg = f"Collection '{collection_name}' not found. No deletion performed."
-            logger.info(msg)
-            messages.append(msg)
-
-            if global_vector_store_cache is not None:
-                logger.info(
-                    "Resetting cached LangChain Chroma vector store instance (collection not found)."
-                )
-                global_vector_store_cache = None
-
-            # Also reset the actual vector store cache in the ingestion processor
-            ingestion_processor_module._vector_store = None
-        else:  # Actual error occurred
-            err_msg = f"Failed to delete collection '{collection_name}': {e}"
-            logger.error(err_msg, exc_info=True)
-            messages.append(err_msg)
-            collection_deleted_successfully = False
-
-    # Determine overall status
-    if collection_deleted_successfully and files_deleted_successfully:
+    # Determine HTTP status code based on results
+    if result["overall_success"]:
         final_status_code = status.HTTP_200_OK
         final_message = "ChromaDB collection and source documents cleared successfully."
-    elif (
-        collection_deleted_successfully or files_deleted_successfully
-    ):  # Partial success
+    elif result["collection_deleted"] or result["source_files_cleared"]:
         final_status_code = status.HTTP_207_MULTI_STATUS
         final_message = "Partial success in clearing resources. Check details."
-    else:  # Both failed or had significant errors
+    else:
         final_status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
         final_message = "Failed to clear ChromaDB collection and/or source documents."
 
@@ -361,9 +271,9 @@ async def clear_chroma_collection_and_documents(
         status_code=final_status_code,
         content={
             "message": final_message,
-            "details": messages,
-            "files_deleted_count": deleted_files_count,
-            "collection_deleted": collection_deleted_successfully,
-            "source_files_cleared": files_deleted_successfully,
+            "details": result["messages"],
+            "files_deleted_count": result["files_deleted_count"],
+            "collection_deleted": result["collection_deleted"],
+            "source_files_cleared": result["source_files_cleared"],
         },
     )
