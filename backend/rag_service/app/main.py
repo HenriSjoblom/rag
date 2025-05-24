@@ -1,20 +1,37 @@
+import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import Settings
 from app.deps import get_settings
 from app.routers import router as rag_router
-from app.services.http_client import lifespan_http_client
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 settings: Settings = get_settings()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with lifespan_http_client(app, timeout=settings.HTTP_CLIENT_TIMEOUT):
-        yield
+    settings = get_settings()
+    logger.info("RAG Service starting up...")
+    logger.info(f"Configured ingestion service URL: {settings.INGESTION_SERVICE_URL}")
+
+    # Initialize global HTTP client
+    app.state.http_client = httpx.AsyncClient(timeout=30.0)
+    logger.info("Global HTTP client initialized.")
+
+    yield
+
+    # Cleanup on shutdown
+    logger.info("RAG Service shutting down...")
+    if hasattr(app.state, "http_client"):
+        await app.state.http_client.aclose()
+        logger.info("Global HTTP client closed.")
 
 
 app = FastAPI(

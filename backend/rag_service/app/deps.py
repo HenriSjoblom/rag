@@ -1,23 +1,23 @@
 import httpx
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 
 from app.config import Settings
 from app.config import settings as app_settings
 from app.services.chat_processor import ChatProcessorService
 
 # Import the getter for the globally managed client
-from app.services.http_client import get_global_http_client
 
 
-def get_http_client() -> (
-    httpx.AsyncClient
-):  # Removed settings dependency as timeout is handled at lifespan
-    """
-    Provides the globally managed httpx.AsyncClient instance
-    as a FastAPI dependency.
-    """
-
-    return get_global_http_client()
+def get_http_client(request: Request) -> httpx.AsyncClient:
+    """Dependency to get the global HTTP client from application state."""
+    if (
+        not hasattr(request.app.state, "http_client")
+        or request.app.state.http_client is None
+    ):
+        raise RuntimeError(
+            "Global HTTP client is not initialized. Ensure the application lifespan manager has run."
+        )
+    return request.app.state.http_client
 
 
 # Cache for ChatProcessor

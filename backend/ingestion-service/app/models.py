@@ -29,6 +29,7 @@ class IngestionResponse(BaseModel):
         None, description="Additional details or confirmation."
     )
 
+
 class DocumentDetail(BaseModel):
     name: str
 
@@ -37,3 +38,15 @@ class DocumentListResponse(BaseModel):
     count: int
     documents: List[DocumentDetail]
     source_directory: str
+
+
+class IngestionStatusResponse(BaseModel):
+    """Response model for ingestion status checks."""
+
+    is_processing: bool
+    status: str
+    last_completed: Optional[str] = None
+    documents_processed: Optional[int] = None
+    chunks_added: Optional[int] = None
+    errors: Optional[List[str]] = None
+    completion_time: Optional[str] = None

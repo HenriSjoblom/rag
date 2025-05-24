@@ -20,9 +20,10 @@ from app.models import (
     ChatRequest,
     ChatResponse,
     IngestionDeleteResponse,
+    IngestionStatusResponse,
     IngestionUploadResponse,
-    RagDocumentDetail,  # New
-    RagDocumentListResponse,  # New
+    RagDocumentDetail,
+    RagDocumentListResponse,
     ServiceErrorResponse,
 )
 from app.services.chat_processor import ChatProcessorService
@@ -122,48 +123,154 @@ async def upload_document_for_ingestion(
 
     ingestion_service_upload_url = f"{settings.INGESTION_SERVICE_URL}api/v1/upload"
     logger.info(
-        f"Forwarding file '{file.filename}' to Ingestion Service at {ingestion_service_upload_url}"
+        f"RAG Service configuration - INGESTION_SERVICE_URL: {settings.INGESTION_SERVICE_URL}"
     )
+    logger.info(
+        f"Attempting to connect to ingestion service at: {ingestion_service_upload_url}"
+    )
+
+    # First, try to ping the ingestion service health endpoint
+    try:
+        health_url = f"{settings.INGESTION_SERVICE_URL}health"
+        logger.info(f"Checking ingestion service health at: {health_url}")
+        health_response = await http_client.get(health_url, timeout=10.0)
+        if health_response.status_code == 200:
+            logger.info("Ingestion service health check passed")
+        else:
+            logger.warning(
+                f"Ingestion service health check returned: {health_response.status_code}"
+            )
+    except httpx.ConnectError as health_connect_error:
+        logger.error(
+            f"Cannot connect to ingestion service health endpoint: {health_connect_error}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Cannot connect to Ingestion Service. Configured URL: {settings.INGESTION_SERVICE_URL}. In Docker, ensure services can reach each other by service name, not localhost.",
+        )
+    except Exception as health_error:
+        logger.error(f"Ingestion service health check failed: {health_error}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ingestion service health check failed. Please verify the service is running at {settings.INGESTION_SERVICE_URL}",
+        )
 
     try:
         # Prepare files for httpx.post
-        # The content of UploadFile needs to be read.
-        # httpx expects a tuple: (filename, file_object, content_type)
         files_data = {"file": (file.filename, await file.read(), file.content_type)}
 
+        logger.info(f"Sending POST request to: {ingestion_service_upload_url}")
         response = await http_client.post(
             ingestion_service_upload_url,
-            files=files_data,  # Use files parameter for multipart/form-data
+            files=files_data,
+            timeout=60.0,  # Increase timeout to 60 seconds
         )
-        response.raise_for_status()  # Raise an exception for 4XX/5XX responses
 
-        ingestion_response_data = response.json()
-        logger.info(
-            f"Successfully forwarded file to Ingestion Service. Response: {ingestion_response_data}"
-        )
+        # Log the response details for debugging
+        logger.info(f"Ingestion service response status: {response.status_code}")
+        logger.info(f"Ingestion service response headers: {dict(response.headers)}")
+
+        # Check if the response is successful before trying to parse
+        if response.status_code not in [200, 202]:
+            logger.error(f"Ingestion service returned status {response.status_code}")
+            response.raise_for_status()
+
+        # Check if response has content and is JSON
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            logger.warning(
+                f"Non-JSON response from ingestion service. Content-Type: {content_type}"
+            )
+            # For 202 responses, the ingestion service might not return JSON
+            return IngestionUploadResponse(
+                status="Upload accepted",
+                documents_found=None,
+                message="File upload accepted by ingestion service",
+            )
+
+        try:
+            ingestion_response_data = response.json()
+            logger.info(f"Successfully parsed JSON response: {ingestion_response_data}")
+        except Exception as json_error:
+            logger.warning(f"Failed to parse JSON response: {json_error}")
+            # Still return success since we got a good status code
+            return IngestionUploadResponse(
+                status="Upload accepted",
+                documents_found=None,
+                message="File upload accepted by ingestion service",
+            )
+
         # Map to our IngestionUploadResponse model
         return IngestionUploadResponse(
-            status=ingestion_response_data.get(
-                "status", "Unknown status from ingestion service"
-            ),
+            status=ingestion_response_data.get("status", "Upload accepted"),
             documents_found=ingestion_response_data.get("documents_found"),
             message=ingestion_response_data.get(
-                "message", "No message from ingestion service"
+                "message", "File uploaded successfully"
             ),
         )
 
-    except (
-        HTTPException
-    ) as http_exc:  # Re-raise if already an HTTPException (e.g. from raise_for_status)
+    except httpx.ConnectError as connect_error:
+        # Handle connection errors specifically
         logger.error(
-            f"HTTP error while forwarding to Ingestion Service: {http_exc.status_code} - {http_exc.detail}"
+            f"Connection error details: {type(connect_error).__name__}: {connect_error}"
         )
-        raise http_exc
-    except Exception as e:
-        logger.exception(f"Error forwarding file to Ingestion Service: {e}")
+        logger.error(f"Failed to connect to: {ingestion_service_upload_url}")
+        logger.error(
+            f"Configured INGESTION_SERVICE_URL: {settings.INGESTION_SERVICE_URL}"
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Failed to connect or communicate with Ingestion Service: {str(e)}",
+            detail=f"Cannot connect to Ingestion Service. Configured URL: {settings.INGESTION_SERVICE_URL}. In Docker, use service names instead of localhost. Error: {str(connect_error)}",
+        )
+    except httpx.TimeoutException as timeout_error:
+        # Handle timeout errors
+        logger.error(f"Timeout error after 60 seconds: {timeout_error}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ingestion Service is not responding within 60 seconds. The service may be overloaded or stuck.",
+        )
+    except httpx.HTTPStatusError as http_status_error:
+        # Handle HTTP status errors from the ingestion service
+        logger.error(
+            f"HTTP status error from Ingestion Service: {http_status_error.response.status_code}"
+        )
+        try:
+            error_detail = http_status_error.response.json().get(
+                "detail", str(http_status_error)
+            )
+        except:
+            error_detail = f"HTTP {http_status_error.response.status_code}: {http_status_error.response.text}"
+
+        # Map the status code from ingestion service to appropriate RAG service status
+        if http_status_error.response.status_code == 409:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=error_detail,
+            )
+        elif http_status_error.response.status_code == 400:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_detail,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Ingestion service error: {error_detail}",
+            )
+    except httpx.RequestError as request_error:
+        # Handle other request errors
+        logger.error(
+            f"Request error while connecting to Ingestion Service: {request_error}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to connect to Ingestion Service: {str(request_error)}",
+        )
+    except Exception as e:
+        logger.exception(f"Unexpected error forwarding file to Ingestion Service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to communicate with Ingestion Service: {str(e)}",
         )
     finally:
         await file.close()
@@ -196,8 +303,8 @@ async def list_documents_via_ingestion_service(
     )
 
     try:
-        response = await http_client.get(ingestion_service_docs_url)
-        response.raise_for_status()  # Raise an exception for 4XX/5XX responses
+        response = await http_client.get(ingestion_service_docs_url, timeout=30.0)
+        response.raise_for_status()
 
         ingestion_response_data = response.json()
         logger.info(
@@ -205,11 +312,10 @@ async def list_documents_via_ingestion_service(
         )
 
         # Map to our RagDocumentListResponse model
-        # Assuming ingestion_response_data matches DocumentListResponse from ingestion-service
         doc_details = [
             RagDocumentDetail(name=doc.get("name"))
             for doc in ingestion_response_data.get("documents", [])
-            if doc.get("name")  # Ensure name exists
+            if doc.get("name")
         ]
 
         return RagDocumentListResponse(
@@ -217,11 +323,26 @@ async def list_documents_via_ingestion_service(
             documents=doc_details,
             source_directory=ingestion_response_data.get("source_directory"),
         )
-    except HTTPException as http_exc:
-        logger.error(
-            f"HTTP error while requesting document list from Ingestion Service: {http_exc.status_code} - {http_exc.detail}"
+    except httpx.ConnectError as connect_error:
+        logger.error(f"Connection error to Ingestion Service: {connect_error}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cannot connect to Ingestion Service. Please check if the service is running.",
         )
-        raise http_exc
+    except httpx.TimeoutException as timeout_error:
+        logger.error(f"Timeout error connecting to Ingestion Service: {timeout_error}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ingestion Service is not responding. Please try again later.",
+        )
+    except httpx.HTTPStatusError as http_exc:
+        logger.error(
+            f"HTTP error while requesting document list from Ingestion Service: {http_exc.response.status_code}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ingestion Service returned error: {http_exc.response.status_code}",
+        )
     except Exception as e:
         logger.exception(f"Error requesting document list from Ingestion Service: {e}")
         raise HTTPException(
@@ -284,4 +405,52 @@ async def delete_all_documents_and_ingested_data(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Failed to connect or communicate with Ingestion Service: {str(e)}",
+        )
+
+
+@router.get(
+    "/documents/status",
+    response_model=IngestionStatusResponse,
+    summary="Get ingestion status from Ingestion Service",
+    description="Returns the current status of the ingestion process.",
+    tags=["documents", "ingestion"],
+)
+async def get_ingestion_status(
+    http_client: httpx.AsyncClient = Depends(get_http_client),
+    settings: Settings = Depends(lambda: app_settings),
+):
+    ingestion_service_status_url = f"{settings.INGESTION_SERVICE_URL}api/v1/status"
+    logger.info(f"Requesting ingestion status from {ingestion_service_status_url}")
+
+    try:
+        response = await http_client.get(ingestion_service_status_url, timeout=30.0)
+        response.raise_for_status()
+
+        status_data = response.json()
+        return IngestionStatusResponse(**status_data)
+    except httpx.ConnectError as connect_error:
+        logger.error(f"Connection error to Ingestion Service: {connect_error}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cannot connect to Ingestion Service for status check",
+        )
+    except httpx.TimeoutException as timeout_error:
+        logger.error(f"Timeout error connecting to Ingestion Service: {timeout_error}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Ingestion Service status check timed out",
+        )
+    except httpx.HTTPStatusError as http_status_error:
+        logger.error(
+            f"HTTP status error from Ingestion Service: {http_status_error.response.status_code}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to get status from Ingestion Service",
+        )
+    except Exception as e:
+        logger.exception(f"Error getting status from Ingestion Service: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to communicate with Ingestion Service: {str(e)}",
         )

@@ -21,6 +21,7 @@ from app.models import (
     DocumentListResponse,
     IngestionResponse,
     IngestionStatus,
+    IngestionStatusResponse,
 )
 from app.services.collection_manager import CollectionManagerService
 from app.services.file_management import FileManagementService
@@ -37,10 +38,14 @@ async def run_ingestion_background(
     ingestion_service: IngestionProcessorService, state_service: IngestionStateService
 ):
     """Wrapper function to run ingestion and handle the state."""
+    result = None
+    errors = []
     try:
         logger.info("Background ingestion task started.")
         ingestion_status: IngestionStatus = ingestion_service.run_ingestion()
+        result = ingestion_status
         if ingestion_status.errors:
+            errors = ingestion_status.errors
             logger.error(
                 f"Background ingestion task finished with errors: {ingestion_status.errors}"
             )
@@ -50,8 +55,9 @@ async def run_ingestion_background(
             )
     except Exception as e:
         logger.error(f"Exception during background ingestion task: {e}", exc_info=True)
+        errors = [str(e)]
     finally:
-        await state_service.stop_ingestion()
+        await state_service.stop_ingestion(result=result, errors=errors)
         logger.info("Ingestion task completed and state released.")
 
 
@@ -244,3 +250,18 @@ async def clear_chroma_collection_and_documents(
             "source_files_cleared": result["source_files_cleared"],
         },
     )
+
+
+@router.get(
+    "/status",
+    response_model=IngestionStatusResponse,
+    summary="Get ingestion status",
+    description="Returns the current status of ingestion process including completion details.",
+    tags=["ingestion"],
+)
+async def get_ingestion_status(
+    state_service: IngestionStateService = Depends(get_ingestion_state_service),
+):
+    """Get the current ingestion status."""
+    status_info = await state_service.get_status()
+    return IngestionStatusResponse(**status_info)
