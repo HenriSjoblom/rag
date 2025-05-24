@@ -15,6 +15,7 @@ from app.deps import (
     get_collection_manager_service,
     get_file_management_service,
     get_ingestion_processor_service,
+    get_ingestion_state_service,
 )
 from app.models import (
     DocumentListResponse,
@@ -26,21 +27,19 @@ from app.services.file_management import FileManagementService
 from app.services.ingestion_processor import (
     IngestionProcessorService,
 )
+from app.services.ingestion_state import IngestionStateService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Global cache for vector store instance
-global_vector_store_cache = None
-is_ingesting = False
 
-
-def run_ingestion_background(service: IngestionProcessorService):
-    """Wrapper function to run ingestion and handle the lock."""
-    global is_ingesting
+async def run_ingestion_background(
+    ingestion_service: IngestionProcessorService, state_service: IngestionStateService
+):
+    """Wrapper function to run ingestion and handle the state."""
     try:
         logger.info("Background ingestion task started.")
-        ingestion_status: IngestionStatus = service.run_ingestion()
+        ingestion_status: IngestionStatus = ingestion_service.run_ingestion()
         if ingestion_status.errors:
             logger.error(
                 f"Background ingestion task finished with errors: {ingestion_status.errors}"
@@ -52,8 +51,8 @@ def run_ingestion_background(service: IngestionProcessorService):
     except Exception as e:
         logger.error(f"Exception during background ingestion task: {e}", exc_info=True)
     finally:
-        is_ingesting = False  # Release the lock
-        logger.info("Ingestion lock released.")
+        await state_service.stop_ingestion()
+        logger.info("Ingestion task completed and state released.")
 
 
 @router.post(
@@ -73,9 +72,9 @@ async def upload_document_and_ingest(
     file_management_service: FileManagementService = Depends(
         get_file_management_service
     ),
+    state_service: IngestionStateService = Depends(get_ingestion_state_service),
 ):
-    global is_ingesting  # Assuming is_ingesting is defined globally in this file
-    if is_ingesting:
+    if await state_service.is_ingesting():
         logger.warning("Upload attempt while ingestion task is already running.")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -104,13 +103,17 @@ async def upload_document_and_ingest(
     finally:
         await file.close()  # Ensure the uploaded file is closed
 
-    # Set the lock and add the task to the background
-    is_ingesting = True
-    logger.info(
-        "Setting ingestion lock and adding task to background after file upload."
+    # Start ingestion
+    if not await state_service.start_ingestion():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to start ingestion - another process may have started.",
+        )
+
+    logger.info("Starting background ingestion task after file upload.")
+    background_tasks.add_task(
+        run_ingestion_background, ingestion_service, state_service
     )
-    # Pass the IngestionProcessorService instance to the background task
-    background_tasks.add_task(run_ingestion_background, ingestion_service)
 
     docs_found_count = file_management_service.count_documents()
 
@@ -137,23 +140,29 @@ async def trigger_ingestion(
     file_management_service: FileManagementService = Depends(
         get_file_management_service
     ),
+    state_service: IngestionStateService = Depends(get_ingestion_state_service),
 ):
     """
     Triggers the document ingestion pipeline to run in the background.
-    Prevents concurrent runs using a simple in-memory flag.
+    Prevents concurrent runs using proper state management.
     """
-
-    global is_ingesting
-    if is_ingesting:
+    if await state_service.is_ingesting():
         logger.warning("Ingestion task is already running.")
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An ingestion process is already running. Please wait for it to complete.",
         )
 
-    is_ingesting = True
-    logger.info("Setting ingestion lock and adding task to background.")
-    background_tasks.add_task(run_ingestion_background, ingestion_service)
+    if not await state_service.start_ingestion():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to start ingestion - another process may have started.",
+        )
+
+    logger.info("Starting background ingestion task.")
+    background_tasks.add_task(
+        run_ingestion_background, ingestion_service, state_service
+    )
 
     # Use FileManagementService to count documents
     docs_found_count = file_management_service.count_documents()
