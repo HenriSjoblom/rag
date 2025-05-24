@@ -14,8 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.deps import (
     get_collection_manager_service,
-    get_document_service,
-    get_file_upload_service,
+    get_file_management_service,
     get_ingestion_processor_service,
 )
 from app.models import (
@@ -24,8 +23,7 @@ from app.models import (
     IngestionStatus,
 )
 from app.services.collection_manager import CollectionManagerService
-from app.services.document_service import DocumentService
-from app.services.file_uploader import FileUploadService
+from app.services.file_management import FileManagementService
 from app.services.ingestion_processor import (
     IngestionProcessorService,
 )
@@ -73,9 +71,9 @@ async def upload_document_and_ingest(
     ingestion_service: IngestionProcessorService = Depends(
         get_ingestion_processor_service
     ),
-    file_upload_service: FileUploadService = Depends(
-        get_file_upload_service
-    ),  # Inject new service
+    file_management_service: FileManagementService = Depends(
+        get_file_management_service
+    ),
 ):
     global is_ingesting  # Assuming is_ingesting is defined globally in this file
     if is_ingesting:
@@ -86,10 +84,10 @@ async def upload_document_and_ingest(
         )
 
     try:
-        # Use the FileUploadService to save the file
-        file_location = await file_upload_service.save_uploaded_file(file)
+        # Use the FileManagementService to save the file
+        file_location = await file_management_service.save_uploaded_file(file)
         logger.info(
-            f"File '{file.filename}' processed by FileUploadService and saved to '{file_location}'"
+            f"File '{file.filename}' processed by FileManagementService and saved to '{file_location}'"
         )
     except HTTPException:
         # Re-raise HTTPException from the service to be returned to the client
@@ -115,22 +113,7 @@ async def upload_document_and_ingest(
     # Pass the IngestionProcessorService instance to the background task
     background_tasks.add_task(run_ingestion_background, ingestion_service)
 
-    docs_found_count = 0
-    try:
-        # Use the source_directory from the file_upload_service or ingestion_service settings
-        source_path = Path(ingestion_service.settings.SOURCE_DIRECTORY)
-        if source_path.exists() and source_path.is_dir():
-            doc_files = list(
-                source_path.rglob("*.*")
-            )  # Consider specific file types if needed
-            docs_found_count = len([f for f in doc_files if f.is_file()])
-        else:
-            docs_found_count = 1  # If path doesn't exist after successful save, count the one just saved.
-    except Exception as e:
-        logger.warning(
-            f"Could not count documents in source directory after upload: {e}. Reporting based on upload."
-        )
-        docs_found_count = 1  # At least the uploaded file is there
+    docs_found_count = file_management_service.count_documents()
 
     return IngestionResponse(
         status="File uploaded and ingestion task started.",
@@ -196,11 +179,13 @@ async def trigger_ingestion(
     tags=["documents_management"],
 )
 async def list_source_documents(
-    document_service: DocumentService = Depends(get_document_service),
+    file_management_service: FileManagementService = Depends(
+        get_file_management_service
+    ),
 ):
     """Lists all PDF documents in the configured source directory."""
     try:
-        return document_service.list_documents()
+        return file_management_service.list_documents()
     except RuntimeError as e:
         logger.error(f"Service error while listing documents: {e}")
         raise HTTPException(
