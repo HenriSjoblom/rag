@@ -3,6 +3,7 @@ from fastapi import Depends
 from app.config import Settings
 from app.config import settings as global_settings
 from app.services.collection_manager import CollectionManagerService
+from app.services.document_service import DocumentService
 from app.services.file_uploader import FileUploadService
 from app.services.ingestion_processor import IngestionProcessorService
 
@@ -32,3 +33,8 @@ def get_collection_manager_service(
 ) -> CollectionManagerService:
     """Dependency to get CollectionManagerService instance."""
     return CollectionManagerService(settings)
+
+
+def get_document_service(settings: Settings = Depends(get_settings)) -> DocumentService:
+    """Dependency to get DocumentService instance."""
+    return DocumentService(settings)

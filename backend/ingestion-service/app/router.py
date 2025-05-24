@@ -1,6 +1,5 @@
 import logging
 from pathlib import Path
-from typing import List
 
 from fastapi import (
     APIRouter,
@@ -13,20 +12,19 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse
 
-from app.config import Settings
 from app.deps import (
     get_collection_manager_service,
+    get_document_service,
     get_file_upload_service,
     get_ingestion_processor_service,
-    get_settings,
 )
 from app.models import (
-    DocumentDetail,
     DocumentListResponse,
     IngestionResponse,
     IngestionStatus,
 )
 from app.services.collection_manager import CollectionManagerService
+from app.services.document_service import DocumentService
 from app.services.file_uploader import FileUploadService
 from app.services.ingestion_processor import (
     IngestionProcessorService,
@@ -195,44 +193,25 @@ async def trigger_ingestion(
     response_model=DocumentListResponse,
     summary="List PDF documents in the source directory",
     description="Retrieves a list of all PDF documents found in the configured source directory.",
-    tags=["documents_management"],  # New tag or use existing like "ingestion"
+    tags=["documents_management"],
 )
-async def list_source_documents(settings: Settings = Depends(get_settings)):
-    source_directory = Path(settings.SOURCE_DIRECTORY)
-    logger.info(f"Listing PDF documents from source directory: '{source_directory}'")
-
-    if not source_directory.exists() or not source_directory.is_dir():
-        logger.warning(
-            f"Source directory '{source_directory}' not found or is not a directory."
-        )
-        # Return empty list
-        return DocumentListResponse(
-            count=0, documents=[], source_directory=str(source_directory)
-        )
-
-    document_details: List[DocumentDetail] = []
+async def list_source_documents(
+    document_service: DocumentService = Depends(get_document_service),
+):
+    """Lists all PDF documents in the configured source directory."""
     try:
-        # Recursively find all .pdf files
-        pdf_files = list(source_directory.rglob("*.pdf"))
-        for pdf_file in pdf_files:
-            if pdf_file.is_file():  # Ensure it's a file
-                document_details.append(DocumentDetail(name=pdf_file.name))
-
-        logger.info(
-            f"Found {len(document_details)} PDF documents in '{source_directory}'."
-        )
-        return DocumentListResponse(
-            count=len(document_details),
-            documents=document_details,
-            source_directory=str(source_directory),
-        )
-    except Exception as e:
-        logger.error(
-            f"Error listing documents in '{source_directory}': {e}", exc_info=True
-        )
+        return document_service.list_documents()
+    except RuntimeError as e:
+        logger.error(f"Service error while listing documents: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to list documents: {str(e)}",
+            detail=str(e),
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error while listing documents: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while listing documents.",
         )
 
 
