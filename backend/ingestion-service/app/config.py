@@ -15,75 +15,58 @@ class Settings(BaseSettings):
 
     # Document Source
     SOURCE_DIRECTORY: str = Field(
-        SERVICE_ROOT_DIR / "documents", validation_alias="SOURCE_DIRECTORY"
+        default="/app/documents", validation_alias="SOURCE_DIRECTORY"
     )
+
+    # File Upload Limits
+    MAX_FILE_SIZE_MB: int = Field(default=50, ge=1, le=500)
+
     # Embedding Model (Must match retrieval service)
     EMBEDDING_MODEL_NAME: str = Field(
         "all-MiniLM-L6-v2", validation_alias="EMBEDDING_MODEL_NAME"
     )
 
     # ChromaDB Settings
-    # Mode: local or docker
     CHROMA_MODE: Literal["local", "docker"] = Field(
-        "local", validation_alias="CHROMA_MODE"
+        "docker", validation_alias="CHROMA_MODE"
     )
-    # For local mode
     CHROMA_PATH: Optional[str] = Field(
         "./data/chroma_db", validation_alias="CHROMA_PATH"
     )
-    # For docker mode
-    CHROMA_HOST: Optional[str] = Field(
-        "http://localhost", validation_alias="CHROMA_HOST"
-    )
-    CHROMA_PORT: Optional[int] = Field(8010, validation_alias="CHROMA_PORT")
-    # Collection name for ChromaDB
+    CHROMA_HOST: Optional[str] = Field("chromadb", validation_alias="CHROMA_HOST")
+    CHROMA_PORT: Optional[int] = Field(8000, validation_alias="CHROMA_PORT")
     CHROMA_COLLECTION_NAME: str = Field(
         "support_docs", validation_alias="CHROMA_COLLECTION_NAME"
     )
 
     # Text Splitting
-    CHUNK_SIZE: int = Field(1000, gt=0, validation_alias="CHUNK_SIZE")
+    CHUNK_SIZE: int = Field(1000, gt=100, le=4000, validation_alias="CHUNK_SIZE")
     CHUNK_OVERLAP: int = Field(150, ge=0, validation_alias="CHUNK_OVERLAP")
 
-    # Ingestion Options
+    # Processing Options
     CLEAN_COLLECTION_BEFORE_INGEST: bool = Field(
         False, validation_alias="CLEAN_COLLECTION_BEFORE_INGEST"
     )
 
-    # Validators
-    @field_validator("SOURCE_DIRECTORY", mode="before")
-    @classmethod
-    def validate_source_directory(cls, v):
-        if not v:
-            raise ValueError("SOURCE_DIRECTORY cannot be empty.")
-        # Resolve path relative to project root (assuming .env is in root)
-        path = Path(v)
-        if not path.is_absolute():
-            # Assumes config.py is in app/core, go up two levels for root
-            base_dir = Path(__file__).resolve().parent.parent.parent
-            path = base_dir / v
-        if not path.exists() or not path.is_dir():
-            raise ValueError(
-                f"SOURCE_DIRECTORY does not exist or is not a directory: {path.resolve()}"
-            )
-        return str(path.resolve())
-
-    @field_validator("CHUNK_OVERLAP", mode="before")
+    @field_validator("CHUNK_OVERLAP")
     @classmethod
     def validate_chunk_overlap(cls, v, info):
-        chunk_size = info.data.get("CHUNK_SIZE")
-        # Ensure overlap is not larger than chunk size
-        if chunk_size is not None and v is not None and v >= chunk_size:
+        chunk_size = info.data.get("CHUNK_SIZE", 1000)
+        if v >= chunk_size:
             raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
         return v
 
+    @field_validator("CHROMA_HOST")
+    @classmethod
+    def validate_chroma_host(cls, v, info):
+        mode = info.data.get("CHROMA_MODE")
+        if mode == "docker" and not v:
+            raise ValueError("CHROMA_HOST is required for docker mode")
+        return v
+
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=True
     )
 
 
 settings = Settings()
-
-# Log the resolved source directory path for verification
-logger.debug(f"Resolved source directory: {settings.SOURCE_DIRECTORY}")
-logger.debug(f"Resolved ChromaDB local path: {settings.CHROMA_PATH}")
