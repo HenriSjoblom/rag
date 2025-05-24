@@ -1,14 +1,26 @@
 from fastapi import Depends
 
-from app.config import Settings, settings as global_settings
+from app.config import Settings
+from app.config import settings as global_settings
+from app.services.file_uploader import FileUploadService
 from app.services.ingestion_processor import IngestionProcessorService
+
 
 # Dependency to get application settings
 def get_settings() -> Settings:
     return global_settings
 
+
 def get_ingestion_processor_service(
-    settings: Settings = Depends(get_settings)
+    settings: Settings = Depends(get_settings),
 ) -> IngestionProcessorService:
-    """Provides a cached instance of the IngestionProcessorService."""
+    """Provides an instance of the IngestionProcessorService."""
+    # This service now directly uses get_vector_store which uses global _vector_store
     return IngestionProcessorService(settings=settings)
+
+
+def get_file_upload_service(
+    settings: Settings = Depends(get_settings),
+) -> FileUploadService:
+    """Provides an instance of the FileUploadService."""
+    return FileUploadService(source_directory_str=settings.SOURCE_DIRECTORY)

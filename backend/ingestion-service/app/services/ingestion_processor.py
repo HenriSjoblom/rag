@@ -6,16 +6,12 @@ from typing import List, Optional
 import chromadb
 from app.config import Settings
 from app.models import IngestionStatus
+from chromadb.errors import InvalidCollectionException
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# from langchain_community.document_loaders import (
-#    DirectoryLoader,
-# )
-# from langchain_unstructured import UnstructuredLoader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -88,6 +84,27 @@ def get_vector_store(settings: Settings) -> Chroma:
         embedding_function = get_embedding_model(settings)
 
         try:
+            # Ensure the collection exists before creating the Chroma instance
+            logger.info(
+                f"Ensuring collection '{settings.CHROMA_COLLECTION_NAME}' exists..."
+            )
+            try:
+                collection = client.get_collection(name=settings.CHROMA_COLLECTION_NAME)
+                logger.info(
+                    f"Collection '{settings.CHROMA_COLLECTION_NAME}' already exists with {collection.count()} documents."
+                )
+            except InvalidCollectionException:
+                # Collection doesn't exist, create it
+                logger.info(
+                    f"Creating new collection '{settings.CHROMA_COLLECTION_NAME}'..."
+                )
+                collection = client.create_collection(
+                    name=settings.CHROMA_COLLECTION_NAME
+                )
+                logger.info(
+                    f"Collection '{settings.CHROMA_COLLECTION_NAME}' created successfully."
+                )
+
             _vector_store = Chroma(
                 client=client,
                 collection_name=settings.CHROMA_COLLECTION_NAME,
@@ -123,79 +140,6 @@ class IngestionProcessorService:
         self.vector_store = get_vector_store(settings)
         logger.info("IngestionProcessorService initialized.")
 
-    def _load_documents2(self) -> List[Document]:
-        """Loads PDF documents from the source directory."""
-        if not self.source_directory.exists() or not self.source_directory.is_dir():
-            logger.error(
-                f"Source directory not found or is not a directory: {self.source_directory}"
-            )
-            return []
-
-        logger.info(f"Loading PDF documents from: {self.source_directory}")
-
-        # Configure DirectoryLoader to load PDF files using UnstructuredFileLoader
-        loader = DirectoryLoader(
-            path=str(self.source_directory),
-            glob="**/*.pdf",  # Pattern to find only PDF files
-            loader_cls=UnstructuredLoader,
-            use_multithreading=True,
-            show_progress=True,
-            recursive=True,
-            silent_errors=True,  # Log errors but attempt to continue
-        )
-
-        try:
-            documents = loader.load()
-            logger.info(
-                f"Attempted loading PDFs. Found {len(documents)} document objects."
-            )
-            # Basic filtering: remove documents with empty page_content
-            loaded_docs = [
-                doc
-                for doc in documents
-                if doc.page_content and doc.page_content.strip()
-            ]
-            if len(loaded_docs) < len(documents):
-                logger.warning(
-                    f"Removed {len(documents) - len(loaded_docs)} documents with empty or whitespace-only content after loading."
-                )
-            if not loaded_docs:
-                logger.warning(
-                    "No valid content could be extracted from the PDF files found."
-                )
-            return loaded_docs
-        except Exception as e:
-            logger.error(f"Error loading PDF documents: {e}", exc_info=True)
-            return []  # Return empty list on failure
-
-    def _load_documents3(self) -> List[Document]:
-        logger.info("Attempting to load a single test PDF.")
-        # Replace with an actual path to a test PDF
-        test_pdf_path = r"app\documents\iphone-16-info.pdf"
-        if not Path(test_pdf_path).exists():
-            logger.error(f"Test PDF not found at: {test_pdf_path}")
-            return []
-
-        try:
-            loader = PyPDFLoader(test_pdf_path)
-            logger.info(f"Loading single test PDF: {test_pdf_path}")
-            documents = loader.load()
-            # Filter out documents with no content or only whitespace
-            valid_documents = [
-                doc
-                for doc in documents
-                if doc.page_content and doc.page_content.strip()
-            ]
-            logger.info(
-                f"Loaded {len(valid_documents)} valid document(s) from the single test PDF."
-            )
-            return valid_documents
-        except Exception as e:
-            logger.error(
-                f"Error loading single test PDF {test_pdf_path}: {e}", exc_info=True
-            )
-            return []
-
     def _load_documents(self) -> List[Document]:
         """Loads all PDF documents from the source directory and its subdirectories."""
         if not self.source_directory.exists() or not self.source_directory.is_dir():
@@ -207,7 +151,9 @@ class IngestionProcessorService:
         logger.info(f"Loading all PDF documents from: {self.source_directory}")
 
         all_documents: List[Document] = []
-        pdf_files_found = list(self.source_directory.rglob("*.pdf")) # Recursively find all .pdf files
+        pdf_files_found = list(
+            self.source_directory.rglob("*.pdf")
+        )  # Recursively find all .pdf files
 
         if not pdf_files_found:
             logger.warning(f"No PDF files found in {self.source_directory}")

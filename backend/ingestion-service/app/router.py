@@ -1,10 +1,8 @@
 import logging
 import os
-import shutil
 from pathlib import Path
 from typing import List
 
-import chromadb
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -12,27 +10,34 @@ from fastapi import (
     File,
     HTTPException,
     UploadFile,
-    status
+    status,
 )
 from fastapi.responses import JSONResponse
 
+import app.services.ingestion_processor as ingestion_processor_module
 from app.config import Settings
-from app.deps import get_ingestion_processor_service, get_settings
+from app.deps import (
+    get_file_upload_service,
+    get_ingestion_processor_service,
+    get_settings,
+)
 from app.models import (
     DocumentDetail,
     DocumentListResponse,
     IngestionResponse,
     IngestionStatus,
 )
+from app.services.file_uploader import FileUploadService
 from app.services.ingestion_processor import (
     IngestionProcessorService,
     get_chroma_client,
 )
-from app.services.ingestion_processor import _vector_store as global_vector_store_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+# Global cache for vector store instance
+global_vector_store_cache = None
 is_ingesting = False
 
 
@@ -68,9 +73,14 @@ def run_ingestion_background(service: IngestionProcessorService):
 async def upload_document_and_ingest(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="PDF document to upload."),
-    service: IngestionProcessorService = Depends(get_ingestion_processor_service),
+    ingestion_service: IngestionProcessorService = Depends(
+        get_ingestion_processor_service
+    ),
+    file_upload_service: FileUploadService = Depends(
+        get_file_upload_service
+    ),  # Inject new service
 ):
-    global is_ingesting
+    global is_ingesting  # Assuming is_ingesting is defined globally in this file
     if is_ingesting:
         logger.warning("Upload attempt while ingestion task is already running.")
         raise HTTPException(
@@ -78,44 +88,24 @@ async def upload_document_and_ingest(
             detail="An ingestion process is already running. Please wait for it to complete before uploading and triggering a new one.",
         )
 
-    if not file.filename:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No filename provided with the uploaded file.",
-        )
-
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid file type. Only PDF documents are allowed.",
-        )
-
-    source_path = Path(service.settings.SOURCE_DIRECTORY)
-    if not source_path.exists() or not source_path.is_dir():
-        logger.error(
-            f"Source directory {source_path} does not exist or is not a directory. Cannot save uploaded file."
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server configuration error: Source directory for uploads not found.",
-        )
-
-    # Ensure the directory exists (it should, but defensive check)
-    source_path.mkdir(parents=True, exist_ok=True)
-
-    file_location = source_path / file.filename
-
     try:
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        logger.info(f"Successfully uploaded file: {file.filename} to {file_location}")
+        # Use the FileUploadService to save the file
+        file_location = await file_upload_service.save_uploaded_file(file)
+        logger.info(
+            f"File '{file.filename}' processed by FileUploadService and saved to '{file_location}'"
+        )
+    except HTTPException:
+        # Re-raise HTTPException from the service to be returned to the client
+        raise
     except Exception as e:
+        # Catch any other unexpected errors from the service
         logger.error(
-            f"Failed to save uploaded file {file.filename}: {e}", exc_info=True
+            f"Unexpected error during file save operation via service: {e}",
+            exc_info=True,
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to save uploaded file: {e}",
+            detail="An unexpected error occurred while saving the file.",
         )
     finally:
         await file.close()  # Ensure the uploaded file is closed
@@ -125,12 +115,20 @@ async def upload_document_and_ingest(
     logger.info(
         "Setting ingestion lock and adding task to background after file upload."
     )
-    background_tasks.add_task(run_ingestion_background, service)
+    # Pass the IngestionProcessorService instance to the background task
+    background_tasks.add_task(run_ingestion_background, ingestion_service)
 
     docs_found_count = 0
     try:
-        doc_files = list(source_path.rglob("*.*"))
-        docs_found_count = len([f for f in doc_files if f.is_file()])
+        # Use the source_directory from the file_upload_service or ingestion_service settings
+        source_path = Path(ingestion_service.settings.SOURCE_DIRECTORY)
+        if source_path.exists() and source_path.is_dir():
+            doc_files = list(
+                source_path.rglob("*.*")
+            )  # Consider specific file types if needed
+            docs_found_count = len([f for f in doc_files if f.is_file()])
+        else:
+            docs_found_count = 1  # If path doesn't exist after successful save, count the one just saved.
     except Exception as e:
         logger.warning(
             f"Could not count documents in source directory after upload: {e}. Reporting based on upload."
@@ -262,7 +260,7 @@ async def clear_chroma_collection_and_documents(
     files_deleted_successfully = False
     messages = []
 
-    #Delete files from the source directory
+    # Delete files from the source directory
     logger.info(
         f"Attempting to delete all files from source directory: '{source_directory}'"
     )
@@ -286,7 +284,6 @@ async def clear_chroma_collection_and_documents(
                         logger.error(err_msg, exc_info=True)
                         messages.append(err_msg)
 
-
             if not messages:  # If no errors during file deletion
                 files_deleted_successfully = True
 
@@ -300,7 +297,6 @@ async def clear_chroma_collection_and_documents(
             )
             logger.error(err_msg, exc_info=True)
             messages.append(err_msg)
-            # Proceed to attempt collection deletion even if file deletion fails partially or fully
 
     # Delete ChromaDB collection
     logger.info(f"Attempting to delete ChromaDB collection: '{collection_name}'")
@@ -316,22 +312,37 @@ async def clear_chroma_collection_and_documents(
             logger.info("Resetting cached LangChain Chroma vector store instance.")
             global_vector_store_cache = None
 
-    except chromadb.errors.NotACollectionError:
-        collection_deleted_successfully = (
-            True  # Desired state (collection doesn't exist)
-        )
-        msg = f"Collection '{collection_name}' not found. No deletion performed."
-        logger.info(msg)
-        messages.append(msg)
-        if global_vector_store_cache is not None:
-            logger.info(
-                "Resetting cached LangChain Chroma vector store instance (collection not found)."
-            )
-            global_vector_store_cache = None
+        # Also reset the actual vector store cache in the ingestion processor
+        ingestion_processor_module._vector_store = None
+
     except Exception as e:
-        err_msg = f"Failed to delete collection '{collection_name}': {e}"
-        logger.error(err_msg, exc_info=True)
-        messages.append(err_msg)
+        # Check if the error is about collection not existing
+        error_str = str(e).lower()
+        if (
+            "not found" in error_str
+            or "does not exist" in error_str
+            or "collection" in error_str
+        ):
+            collection_deleted_successfully = (
+                True  # Desired state (collection doesn't exist)
+            )
+            msg = f"Collection '{collection_name}' not found. No deletion performed."
+            logger.info(msg)
+            messages.append(msg)
+
+            if global_vector_store_cache is not None:
+                logger.info(
+                    "Resetting cached LangChain Chroma vector store instance (collection not found)."
+                )
+                global_vector_store_cache = None
+
+            # Also reset the actual vector store cache in the ingestion processor
+            ingestion_processor_module._vector_store = None
+        else:  # Actual error occurred
+            err_msg = f"Failed to delete collection '{collection_name}': {e}"
+            logger.error(err_msg, exc_info=True)
+            messages.append(err_msg)
+            collection_deleted_successfully = False
 
     # Determine overall status
     if collection_deleted_successfully and files_deleted_successfully:
