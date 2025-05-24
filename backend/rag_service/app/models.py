@@ -89,4 +89,3 @@ class RagDocumentDetail(BaseModel):
 class RagDocumentListResponse(BaseModel):
     count: int
     documents: List[RagDocumentDetail]
-    source_directory: Optional[str] = None

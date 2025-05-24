@@ -322,7 +322,6 @@ async def list_documents_via_ingestion_service(
         return RagDocumentListResponse(
             count=ingestion_response_data.get("count", 0),
             documents=doc_details,
-            source_directory=ingestion_response_data.get("source_directory"),
         )
     except httpx.ConnectError as connect_error:
         logger.error(f"Connection error to Ingestion Service: {connect_error}")
