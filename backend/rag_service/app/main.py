@@ -35,8 +35,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Chat API Service",
-    description="Orchestrates RAG pipeline for the customer support chatbot.",
+    title="RAG Service",
+    description="Orchestrates RAG pipeline for the user manual assistant chatbot.",
     version="1.0.0",
     lifespan=lifespan,
 )

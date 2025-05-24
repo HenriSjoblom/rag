@@ -251,7 +251,6 @@ async def clear_chroma_collection_and_documents(
         },
     )
 
-
 @router.get(
     "/status",
     response_model=IngestionStatusResponse,

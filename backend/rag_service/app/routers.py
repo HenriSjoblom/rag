@@ -37,6 +37,7 @@ router = APIRouter()
     response_model=ChatResponse,
     summary="Process a user's chat message",
     description="Receives a user message, orchestrates retrieval and generation, and returns an AI response.",
+    tags=["chat"],
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": ServiceErrorResponse,
@@ -89,7 +90,7 @@ async def process_chat_message(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Upload a PDF document for ingestion via Ingestion Service",
     description="Forwards a PDF file to the Ingestion Service to be saved and trigger background ingestion.",
-    tags=["documents", "ingestion"],
+    tags=["documents"],
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": ServiceErrorResponse,
@@ -281,7 +282,7 @@ async def upload_document_for_ingestion(
     response_model=RagDocumentListResponse,
     summary="List documents managed by the Ingestion Service",
     description="Retrieves a list of documents by querying the Ingestion Service.",
-    tags=["documents", "ingestion"],
+    tags=["documents"],
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": ServiceErrorResponse,
@@ -356,7 +357,7 @@ async def list_documents_via_ingestion_service(
     response_model=IngestionDeleteResponse,  # Use the new response model
     summary="Clear all documents and ingested data via Ingestion Service",
     description="Requests the Ingestion Service to delete its ChromaDB collection and source documents.",
-    tags=["documents", "ingestion"],
+    tags=["documents"],
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": ServiceErrorResponse,
