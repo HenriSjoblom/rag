@@ -1,73 +1,25 @@
+# Service Base URLs
 @chromadb = http://localhost:8000
 @rag-service = http://localhost:8001
-@generation-service = http://localhost:8003
 @retriever-service = http://localhost:8002
+@generation-service = http://localhost:8003
 @ingestion-service = http://localhost:8004
 
+# =============================================================================
+# CHROMADB TESTS
+# =============================================================================
+
+### Test ChromaDB Heartbeat
 GET {{chromadb}}/api/v2/heartbeat
-###
-GET http://localhost:8010/api/v2/heartbeat
-###
-GET http://127.0.0.1:8000/api/v2/heartbeat
 
-###
+# =============================================================================
+# RAG SERVICE TESTS
+# =============================================================================
+
+### Test RAG Service Health
 GET {{rag-service}}/health
-###
-GET {{generation-service}}/health
-###
-GET {{retriever-service}}/health
-###
-GET {{ingestion-service}}/health
 
-
-
-###
-POST {{ingestion-service}}/api/v1/ingest
-
-###
-POST {{retriever-service}}/api/v1/retrieve
-Content-Type: application/json
-
-{
-    "query": "everything about iphone"
-}
-
-
-###
-POST {{generation-service}}/api/v1/generate
-Content-Type: application/json
-
-{
-    "query": "What key information is provided about iPhone's safety, potential for medical device interference, and regulatory compliance?",
-    "context_chunks": [
-        "sound and in “Important safety information” in the  \niPhone User Guide .\nMedical Device Interference\niPhone contains magnets as well as components and/\nor radios that may interfere with medical devices. See \n“Important safety information” in the iPhone User Guide .\nRegulatory\nRegulatory certification information is available on-device. \nGo to Settings > General > Legal & Regulatory. Additional \nregulatory information is in “Safety, handling, and \nsupport” in the iPhone User Guide .\nFCC and ISED Canada Compliance\nThis device complies with part 15 of the FCC Rules and \nISED Canada licence-exempt RSS standard(s). Operation"
-    ]
-}
-
-
-###
-# @name UploadTestPdfToIngestionService
-POST {{ingestion-service}}/api/v1/upload
-Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
-
-------WebKitFormBoundary7MA4YWxkTrZu0gW
-Content-Disposition: form-data; name="file"; filename="iphone-16-info.pdf"
-Content-Type: application/pdf
-
-< ./ingestion-service/test_documents/iphone-16-info.pdf
-------WebKitFormBoundary7MA4YWxkTrZu0gW--
-
-###
-# @name ListSourceDocumentsIngestionService
-GET {{ingestion-service}}/api/v1/documents
-
-
-###
-# @name ClearIngestionCollection
-DELETE {{ingestion-service}}/api/v1/collection
-
-
-###
+### Chat with RAG Service
 POST {{rag-service}}/api/v1/chat
 Content-Type: application/json
 
@@ -76,9 +28,7 @@ Content-Type: application/json
     "message": "What key information is provided about iPhone's safety, potential for medical device interference, and regulatory compliance?"
 }
 
-
-###
-# @name UploadPdfViaRagService
+### Upload PDF via RAG Service
 POST {{rag-service}}/api/v1/documents/upload
 Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryRAGUpload
 
@@ -89,18 +39,88 @@ Content-Type: application/pdf
 < ./ingestion-service/test_documents/iphone-16-info.pdf
 ------WebKitFormBoundaryRAGUpload--
 
-
-###
-# @name ListSourceDocumentsRagService
+### List Documents via RAG Service
 GET {{rag-service}}/api/v1/documents
 
-###
+### Delete Documents via RAG Service
 DELETE {{rag-service}}/api/v1/documents
 
-###
-# @name GetIngestionStatus
+### Get Ingestion Status via RAG Service
+GET {{rag-service}}/api/v1/documents/status
+
+# =============================================================================
+# RETRIEVER SERVICE TESTS
+# =============================================================================
+
+### Test Retriever Service Health
+GET {{retriever-service}}/health
+
+### Retrieve Documents
+POST {{retriever-service}}/api/v1/retrieve
+Content-Type: application/json
+
+{
+    "query": "everything about iphone"
+}
+
+# =============================================================================
+# GENERATION SERVICE TESTS
+# =============================================================================
+
+### Test Generation Service Health
+GET {{generation-service}}/health
+
+### Generate Response
+POST {{generation-service}}/api/v1/generate
+Content-Type: application/json
+
+{
+    "query": "What key information is provided about iPhone's safety, potential for medical device interference, and regulatory compliance?",
+    "context_chunks": [
+        "sound and in "Important safety information" in the iPhone User Guide. Medical Device Interference iPhone contains magnets as well as components and/or radios that may interfere with medical devices. See "Important safety information" in the iPhone User Guide. Regulatory Regulatory certification information is available on-device. Go to Settings > General > Legal & Regulatory. Additional regulatory information is in "Safety, handling, and support" in the iPhone User Guide. FCC and ISED Canada Compliance This device complies with part 15 of the FCC Rules and ISED Canada licence-exempt RSS standard(s). Operation"
+    ]
+}
+
+# =============================================================================
+# INGESTION SERVICE TESTS
+# =============================================================================
+
+### Test Ingestion Service Health
+GET {{ingestion-service}}/health
+
+### Clear Collection (for clean testing)
+DELETE {{ingestion-service}}/api/v1/collection
+
+### Upload PDF to Ingestion Service
+POST {{ingestion-service}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="iphone-16-info.pdf"
+Content-Type: application/pdf
+
+< ./ingestion-service/test_documents/iphone-16-info.pdf
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### Upload Different PDF (should succeed)
+POST {{ingestion-service}}/api/v1/upload
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryDifferent
+
+------WebKitFormBoundaryDifferent
+Content-Disposition: form-data; name="file"; filename="iphone_user_guide.pdf"
+Content-Type: application/pdf
+
+< ./ingestion-service/test_documents/iphone_user_guide.pdf
+------WebKitFormBoundaryDifferent--
+
+### Trigger Ingestion Process
+POST {{ingestion-service}}/api/v1/ingest
+
+### List Source Documents
+GET {{ingestion-service}}/api/v1/documents
+
+### Get Ingestion Status
 GET {{ingestion-service}}/api/v1/status
 
-###
-# @name GetIngestionStatusViaRagService
-GET {{rag-service}}/api/v1/documents/status
+### Delete Collection and Documents
+DELETE {{ingestion-service}}/api/v1/collection

@@ -2,6 +2,11 @@ from fastapi import Depends, Request
 
 from app.config import Settings
 from app.config import settings as global_settings
+from app.services.chroma_manager import (
+    ChromaClientManager,
+    EmbeddingModelManager,
+    VectorStoreManager,
+)
 from app.services.collection_manager import CollectionManagerService
 from app.services.file_management import FileManagementService
 from app.services.ingestion_processor import IngestionProcessorService
@@ -13,12 +18,32 @@ def get_settings() -> Settings:
     return global_settings
 
 
+def get_chroma_client_manager(request: Request) -> ChromaClientManager:
+    """Get ChromaDB client manager from application state."""
+    return request.app.state.chroma_manager
+
+
+def get_embedding_model_manager(request: Request) -> EmbeddingModelManager:
+    """Get embedding model manager from application state."""
+    return request.app.state.embedding_manager
+
+
+def get_vector_store_manager(request: Request) -> VectorStoreManager:
+    """Get vector store manager from application state."""
+    return request.app.state.vector_store_manager
+
+
 def get_ingestion_processor_service(
     settings: Settings = Depends(get_settings),
+    request: Request = None,
 ) -> IngestionProcessorService:
     """Provides an instance of the IngestionProcessorService."""
-    # This service now directly uses get_vector_store which uses global _vector_store
-    return IngestionProcessorService(settings=settings)
+    return IngestionProcessorService(
+        settings,
+        request.app.state.chroma_manager,
+        request.app.state.embedding_manager,
+        request.app.state.vector_store_manager,
+    )
 
 
 def get_file_management_service(
@@ -30,20 +55,19 @@ def get_file_management_service(
 
 def get_collection_manager_service(
     settings: Settings = Depends(get_settings),
+    request: Request = None,
 ) -> CollectionManagerService:
     """Dependency to get CollectionManagerService instance."""
-    return CollectionManagerService(settings)
+    chroma_manager = request.app.state.chroma_manager if request else None
+    vector_store_manager = request.app.state.vector_store_manager if request else None
+    return CollectionManagerService(settings, chroma_manager, vector_store_manager)
 
 
 def get_ingestion_state_service(request: Request) -> IngestionStateService:
     """Dependency to get IngestionStateService from application state."""
-    if not hasattr(request.app.state, "ingestion_state_service"):
-        # Fallback initialization if not properly set up in lifespan
-        request.app.state.ingestion_state_service = IngestionStateService()
     return request.app.state.ingestion_state_service
 
 
-# Keep backward compatibility aliases if needed elsewhere
 def get_document_service(
     settings: Settings = Depends(get_settings),
 ) -> FileManagementService:
