@@ -1,19 +1,21 @@
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
-from typing import List
+
 
 class RetrievalRequest(BaseModel):
-    """Request model for retrieving document chunks."""
-    query: str = Field(
-        ...,
-        description="The user query to search for relevant documents.",
-        min_length=1,
-        json_schema_extra={'example': "Tell me about apples"}
-    )
+    """Request model for document retrieval."""
+
+    query: str = Field(..., min_length=1, description="Search query text")
+
 
 class RetrievalResponse(BaseModel):
-    """Response model containing the retrieved document chunks."""
+    """Response model for document retrieval."""
+
     chunks: List[str] = Field(
-        ...,
-        description="List of relevant document text chunks.",
-        json_schema_extra={'example': ["This is the first test document about apples.", "A final document discussing apples and oranges together."]}
+        default_factory=list, description="Retrieved document chunks"
     )
+    collection_name: Optional[str] = Field(
+        None, description="Name of the collection searched"
+    )
+    query: Optional[str] = Field(None, description="Original query")

@@ -1,10 +1,13 @@
-from fastapi import FastAPI
-from contextlib import asynccontextmanager
 import logging
+from contextlib import asynccontextmanager
 
-from app.routers import router as retrieve_router
+from fastapi import FastAPI
+
 from app.deps import get_settings
-from app.services.vector_search import lifespan_retrieval_service
+from app.routers import health_router, retrieval_router
+from app.services.chroma_manager import ChromaClientManager
+from app.services.embedding_manager import EmbeddingModelManager
+from app.services.vector_store_manager import VectorStoreManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -13,39 +16,45 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    FastAPI lifespan manager to load model and connect to DB on startup,
-    and clean up on shutdown.
-    """
     settings = get_settings()
-    logger.info("Retrieval service lifespan startup...")
-    # Use the async context manager from vector_search service
-    async with lifespan_retrieval_service(
-        app=app,
-        model_name=settings.EMBEDDING_MODEL_NAME,
-        chroma_mode=settings.CHROMA_MODE,
-        chroma_path=settings.CHROMA_PATH,
-        chroma_host=settings.CHROMA_HOST,
-        chroma_port=settings.CHROMA_PORT,
-        collection_name=settings.CHROMA_COLLECTION_NAME
-    ):
-        logger.info("Retrieval service startup complete. Model and DB connection ready.")
-        yield # Application runs
-    # Cleanup happens automatically when exiting the 'async with' block
-    logger.info("Retrieval service lifespan shutdown complete.")
+    logger.info("Retrieval Service starting up...")
+
+    # Initialize managers as singletons in app state
+    app.state.chroma_manager = ChromaClientManager(settings)
+    app.state.embedding_manager = EmbeddingModelManager(settings)
+    app.state.vector_store_manager = VectorStoreManager(
+        settings, app.state.chroma_manager, app.state.embedding_manager
+    )
+
+    # Pre-load resources on startup
+    try:
+        logger.info("Pre-loading embedding model...")
+        app.state.embedding_manager.get_model()
+        logger.info("Pre-connecting to ChromaDB...")
+        app.state.chroma_manager.get_client()
+        logger.info("Pre-loading collection...")
+        app.state.vector_store_manager.get_collection()
+        logger.info("Resources pre-loaded successfully.")
+    except Exception as e:
+        logger.error(f"Failed to pre-load resources during startup: {e}", exc_info=True)
+        raise RuntimeError(f"Failed to pre-load resources: {e}") from e
+
+    yield
+
+    # Cleanup on shutdown
+    logger.info("Retrieval Service shutting down...")
 
 
 app = FastAPI(
     title="Retrieval Service",
-    description="Embeds queries and retrieves relevant documents from a vector database.",
+    description="Retrieves relevant document chunks from a vector database.",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
-# Include API routers
-app.include_router(retrieve_router, prefix="/api/v1") # Add a version prefix
+# Include health router at root level
+app.include_router(health_router)
 
-@app.get("/health", tags=["health"])
-async def health_check():
-    """Basic health check endpoint."""
-    return {"status": "ok"}
+# Include API routers with prefix
+api_prefix = "/api/v1"
+app.include_router(retrieval_router, prefix=api_prefix)

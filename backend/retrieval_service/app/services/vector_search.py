@@ -1,206 +1,71 @@
 import asyncio
 import logging
-from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from chromadb.utils import embedding_functions
+from app.config import Settings
+from app.services.chroma_manager import ChromaClientManager
+from app.services.embedding_manager import EmbeddingModelManager
+from app.services.vector_store_manager import VectorStoreManager
+from chromadb.errors import ChromaError
 from fastapi import HTTPException, status
-from sentence_transformers import SentenceTransformer
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Global instances managed by lifespan
-_embedding_model: Optional[SentenceTransformer] = None
-_chroma_client: Optional[chromadb.ClientAPI] = None
-_chroma_collection: Optional[chromadb.Collection] = (
-    None  # This global one can become stale
-)
-
-
-async def get_embedding_model() -> SentenceTransformer:
-    """Dependency to get the loaded embedding model."""
-    if _embedding_model is None:
-        # This should ideally not happen if lifespan management is correct
-        logger.error("Embedding model accessed before initialization.")
-        raise RuntimeError("Embedding model not initialized.")
-    return _embedding_model
-
-
-async def get_chroma_client() -> (
-    chromadb.ClientAPI
-):  # Changed from get_chroma_collection
-    """Dependency to get the ChromaDB client API object."""
-    if _chroma_client is None:
-        # This should ideally not happen
-        logger.error("ChromaDB client accessed before initialization.")
-        raise RuntimeError("ChromaDB client not initialized.")
-    return _chroma_client
-
-
-@asynccontextmanager
-async def lifespan_retrieval_service(
-    app,
-    model_name: str,
-    chroma_mode: str,
-    collection_name: str,
-    chroma_path: Optional[str] = None,
-    chroma_host: Optional[str] = None,
-    chroma_port: Optional[int] = None,
-):
-    """Manages the lifespan of embedding model and ChromaDB client."""
-    global _embedding_model, _chroma_client, _chroma_collection
-
-    # --- Idempotency Check for testing/hot-reloading ---
-    if (
-        _embedding_model is not None and _chroma_client is not None
-    ):  # Check client instead of collection
-        logger.info(
-            "Lifespan: Resources appear to be already initialized. Skipping setup."
-        )
-        try:
-            yield
-        finally:
-            pass
-        return
-
-    logger.info("Initializing retrieval service resources...")
-    logger.info(f"Loading embedding model: {model_name}...")
-    try:
-        _embedding_model = SentenceTransformer(model_name)
-        logger.info("Embedding model loaded successfully.")
-    except Exception as e:
-        logger.error(
-            f"Failed to load embedding model '{model_name}': {e}", exc_info=True
-        )
-        raise RuntimeError(f"Failed to load embedding model: {e}") from e
-
-    logger.info(f"Connecting to ChromaDB in '{chroma_mode}' mode...")
-    if chroma_mode == "local":
-        if not chroma_path:
-            logger.error("chroma_path is required for local ChromaDB mode.")
-            raise ValueError("chroma_path is required for local mode.")
-        logger.info(f"ChromaDB local path: {chroma_path}")
-        _chroma_client = chromadb.PersistentClient(
-            path=chroma_path,
-            settings=ChromaSettings(allow_reset=True),  # allow_reset for dev/testing
-        )
-    elif chroma_mode == "docker":
-        if not chroma_host or not chroma_port:
-            logger.error(
-                "chroma_host and chroma_port are required for Docker ChromaDB mode."
-            )
-            raise ValueError(
-                "chroma_host and chroma_port are required for docker mode."
-            )
-        logger.info(f"ChromaDB Docker host: {chroma_host}, port: {chroma_port}")
-        _chroma_client = chromadb.HttpClient(host=chroma_host, port=chroma_port)
-    else:
-        logger.error(
-            f"Invalid CHROMA_MODE: {chroma_mode}. Must be 'local' or 'docker'."
-        )
-        raise ValueError(
-            f"Invalid CHROMA_MODE: {chroma_mode}. Must be 'local' or 'docker'."
-        )
-    logger.info("ChromaDB client initialized.")
-
-    try:
-        # Ensure collection is created with the same embedding function characteristics
-        chroma_ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=model_name
-        )
-        logger.info(
-            f"Attempting to get or create ChromaDB collection '{collection_name}' with EF for model '{model_name}'..."
-        )
-        # Store the initial collection reference for potential direct use or checks if needed,
-        # but VectorSearchService will re-fetch by name.
-        _chroma_collection = _chroma_client.get_or_create_collection(
-            name=collection_name,
-            embedding_function=chroma_ef,  # Crucial for consistency
-        )
-        logger.info(
-            f"ChromaDB collection '{_chroma_collection.name}' (ID: {_chroma_collection.id}) is available."
-        )
-    except Exception as e:
-        logger.error(
-            f"Failed to initialize ChromaDB collection '{collection_name}': {e}",
-            exc_info=True,
-        )
-        raise RuntimeError(f"Failed to initialize ChromaDB collection: {e}") from e
-
-    try:
-        yield  # Application runs
-    finally:
-        logger.info("Shutting down retrieval service resources...")
-        if (
-            _chroma_client
-            and hasattr(_chroma_client, "reset")
-            and callable(getattr(_chroma_client, "reset"))
-        ):
-            try:
-                logger.info("Resetting ChromaDB client...")
-                _chroma_client.reset()
-                logger.info("ChromaDB client reset successfully.")
-                # Add a small delay if needed, observed in user code
-                # time.sleep(1) # Example: time.sleep(config.CHROMA_RESET_DELAY)
-            except Exception as e:
-                logger.error(f"Error resetting ChromaDB client: {e}", exc_info=True)
-
-        _embedding_model = None
-        _chroma_client = None
-        _chroma_collection = None
-        logger.info("Retrieval service resources released.")
-
-
 class VectorSearchService:
+    """Handles vector search operations for retrieval only."""
+
     def __init__(
         self,
-        embedding_model: SentenceTransformer,
-        chroma_client: chromadb.ClientAPI,  # Changed
-        collection_name: str,  # Added
-        top_k: int,
-        distance_threshold: float = 1.0,
+        settings: Settings,
+        chroma_manager: ChromaClientManager,
+        embedding_manager: EmbeddingModelManager,
+        vector_store_manager: VectorStoreManager,
     ):
-        self.embedding_model = embedding_model
-        self.chroma_client = chroma_client
-        self.collection_name = collection_name
-        self.top_k = top_k
-        self.distance_threshold = distance_threshold
-
-    async def _get_fresh_collection(self) -> chromadb.Collection:
-        """Fetches a fresh collection object from ChromaDB by name."""
-        try:
-            # When getting an existing collection, Chroma uses the EF it was created with.
-            # So, no need to pass embedding_function to get_collection here if it was set at creation.
-            collection = await asyncio.to_thread(
-                self.chroma_client.get_collection, name=self.collection_name
-            )
-            logger.debug(
-                f"Successfully fetched fresh collection '{collection.name}' (ID: {collection.id})."
-            )
-            return collection
-        except Exception as e:
-            # This includes cases where the collection doesn't exist.
-            logger.error(
-                f"Failed to get ChromaDB collection '{self.collection_name}': {e}",
-                exc_info=True,
-            )
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail=f"Vector database collection '{self.collection_name}' not found or inaccessible: {str(e)}",
-            )
+        self.settings = settings
+        self.chroma_manager = chroma_manager
+        self.embedding_manager = embedding_manager
+        self.vector_store_manager = vector_store_manager
+        logger.info("VectorSearchService initialized for retrieval operations.")
 
     def _embed_query(self, query: str) -> List[float]:
         """Generates embedding for the given query text."""
+        if not query or not query.strip():
+            logger.error("Empty query provided for embedding")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Query cannot be empty.",
+            )
+
         try:
-            embedding = self.embedding_model.encode(query, convert_to_numpy=True)
+            embedding_model = self.embedding_manager.get_model()
+            embedding = embedding_model.encode(query.strip(), convert_to_numpy=True)
+
+            if embedding is None:
+                raise ValueError("Embedding model returned None")
+
             if embedding.ndim > 1:
                 embedding = embedding.flatten()
-            return embedding.tolist()
+
+            embedding_list = embedding.tolist()
+
+            if not embedding_list or len(embedding_list) == 0:
+                raise ValueError("Embedding model returned empty result")
+
+            return embedding_list
+
+        except MemoryError as e:
+            logger.error(f"Out of memory during query embedding: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail="Insufficient memory to process query embedding.",
+            ) from e
+        except ValueError as e:
+            logger.error(f"Invalid input for query embedding: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid query format: {str(e)}",
+            ) from e
         except Exception as e:
             logger.error(f"Failed to embed query: {e}", exc_info=True)
             raise HTTPException(
@@ -208,24 +73,56 @@ class VectorSearchService:
                 detail="Failed to generate query embedding.",
             ) from e
 
+    async def _get_fresh_collection(self):
+        """Get a fresh collection instance."""
+        try:
+            return await asyncio.to_thread(self.vector_store_manager.get_collection)
+        except ConnectionError as e:
+            logger.error(f"Connection error getting collection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Vector database is currently unavailable.",
+            ) from e
+        except RuntimeError as e:
+            logger.error(f"Runtime error getting collection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Vector database collection not available: {str(e)}",
+            ) from e
+        except Exception as e:
+            logger.error(f"Unexpected error getting collection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to access vector database collection.",
+            ) from e
+
     async def search(self, query: str) -> List[Dict[str, Any]]:
-        collection = await self._get_fresh_collection()
-        logger.info(
-            f"Search service using collection: '{collection.name}' (ID: {collection.id}) for query: '{query[:50]}...'"
-        )
-        query_embedding = self._embed_query(query)
+        """Search for relevant documents."""
+        if not query or not query.strip():
+            logger.warning("Empty query provided for search")
+            return []
 
         try:
+            collection = await self._get_fresh_collection()
+            logger.info(
+                f"Search service using collection: '{collection.name}' (ID: {collection.id}) for query: '{query[:50]}...'"
+            )
+            query_embedding = self._embed_query(query)
+
+            if self.settings.TOP_K_RESULTS <= 0:
+                raise ValueError("TOP_K_RESULTS must be greater than 0")
+
             results = await asyncio.to_thread(
                 collection.query,
                 query_embeddings=[query_embedding],
-                n_results=self.top_k,
-                include=[
-                    "documents",
-                    "metadatas",
-                    "distances",
-                ],
+                n_results=self.settings.TOP_K_RESULTS,
+                include=["documents", "metadatas", "distances"],
             )
+
+            if not results:
+                logger.info("No results returned from ChromaDB query")
+                return []
+
             logger.debug(f"Raw ChromaDB query results: {results}")
 
             processed_chunks = []
@@ -249,41 +146,56 @@ class VectorSearchService:
                 )
 
                 for i in range(len(ids_list)):
-                    doc_id = ids_list[i]
-                    doc_text = documents_list[i]
-                    metadata = metadatas_list[i]
-                    distance = distances_list[i]
+                    try:
+                        doc_id = ids_list[i]
+                        doc_text = documents_list[i]
+                        metadata = metadatas_list[i]
+                        distance = distances_list[i]
 
-                    if distance is not None and distance <= self.distance_threshold:
-                        processed_chunks.append(
-                            {
-                                "id": doc_id,  # We still use the ID here
-                                "text": doc_text,
-                                "metadata": metadata if metadata else {},
-                                "distance": distance,
-                            }
-                        )
-                    else:
-                        logger.debug(
-                            f"Filtered out chunk ID {doc_id} (text: {str(doc_text)[:30]}...) due to distance {distance} > {self.distance_threshold}"
-                        )
+                        if doc_id and doc_text:  # Only include valid results
+                            processed_chunks.append(
+                                {
+                                    "id": doc_id,
+                                    "text": doc_text,
+                                    "metadata": metadata if metadata else {},
+                                    "distance": distance
+                                    if distance is not None
+                                    else float("inf"),
+                                }
+                            )
+                    except (IndexError, TypeError) as e:
+                        logger.warning(f"Skipping malformed result at index {i}: {e}")
+                        continue
 
             logger.info(
-                f"Returning {len(processed_chunks)} chunks after distance filtering for query '{query[:50]}...'."
+                f"Returning {len(processed_chunks)} chunks for query '{query[:50]}...'."
             )
             return processed_chunks
-        except Exception as e:
-            logger.error(
-                f"ChromaDB query failed for collection '{collection.name}': {e}",
-                exc_info=True,
-            )
-            # Check if the error is about the collection not existing, which _get_fresh_collection should catch
-            # but re-checking here can provide a more specific error context if it somehow passes _get_fresh_collection
+
+        except HTTPException:
+            raise
+        except ChromaError as e:
+            logger.error(f"ChromaDB query error: {e}", exc_info=True)
             if "does not exist" in str(e).lower() or "not found" in str(e).lower():
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Vector database collection '{self.collection_name}' could not be found during query operation: {str(e)}",
+                    detail=f"Vector database collection '{self.settings.CHROMA_COLLECTION_NAME}' not found.",
                 )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Database error during search operation.",
+            ) from e
+        except ValueError as e:
+            logger.error(f"Configuration error during search: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Search configuration error: {str(e)}",
+            ) from e
+        except Exception as e:
+            logger.error(
+                f"ChromaDB query failed for collection '{self.settings.CHROMA_COLLECTION_NAME}': {e}",
+                exc_info=True,
+            )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to query vector database: {str(e)}",

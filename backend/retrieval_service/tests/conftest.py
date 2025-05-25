@@ -10,15 +10,9 @@ import numpy as np
 import pytest
 import pytest_asyncio
 from app.config import Settings
-from app.config import settings as global_app_settings_for_conftest
 from app.deps import get_settings
 from app.main import app as fastapi_app
-from app.services.vector_search import (
-    VectorSearchService,
-    get_chroma_collection,
-    get_embedding_model,
-    lifespan_retrieval_service,
-)
+from app.services.vector_search import VectorSearchService
 from chromadb.api.models.Collection import Collection as ChromaCollectionModel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -139,9 +133,33 @@ def mock_chroma_collection() -> MagicMock:
 def mock_search_service() -> AsyncMock:
     """Provides a mock VectorSearchService for dependency injection."""
     mock = AsyncMock(spec=VectorSearchService)
-    # Mock the collection attribute needed in the response
-    mock.chroma_collection = MagicMock()
-    mock.chroma_collection.name = "mock_test_collection"
+    # Mock the collection_name attribute needed in the response
+    mock.settings = MagicMock()
+    mock.settings.CHROMA_COLLECTION_NAME = "mock_test_collection"
+
+    # Mock default search behavior
+    mock.search.return_value = [
+        {
+            "id": "test_doc_1",
+            "text": "Test document content about apples",
+            "metadata": {"source": "test.pdf"},
+            "distance": 0.5,
+        }
+    ]
+
+    return mock
+
+
+@pytest.fixture
+def error_handling_search_service() -> AsyncMock:
+    """Mock service that raises various errors for testing error handling."""
+    mock = AsyncMock(spec=VectorSearchService)
+    mock.settings = MagicMock()
+    mock.settings.CHROMA_COLLECTION_NAME = "error_test_collection"
+
+    # Configure to raise different errors
+    mock.search.side_effect = Exception("Database connection failed")
+
     return mock
 
 
@@ -158,17 +176,10 @@ async def test_app(override_settings: Settings) -> AsyncGenerator[FastAPI, None]
     fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
     print("Applied settings override.")
 
-    # Manually create and run the lifespan manager
-    lifespan_manager = lifespan_retrieval_service(
-        app=fastapi_app,
-        model_name=override_settings.EMBEDDING_MODEL_NAME,
-        chroma_path=override_settings.CHROMA_PATH,
-        collection_name=override_settings.CHROMA_COLLECTION_NAME,
-        chroma_mode="local",
-    )
-    print("Created lifespan manager.")
+    # Use the app's lifespan context manager directly
+    print("Starting lifespan context...")
     try:
-        async with lifespan_manager:
+        async with fastapi_app.router.lifespan_context(fastapi_app):
             yield fastapi_app
     finally:
         print("Tearing down test_app fixture (session scope)...")
@@ -250,6 +261,7 @@ def get_injected_settings(client: TestClient) -> Settings:
 
 # -- Fixtures for Docker Mode Integration Tests --
 
+
 def get_docker_settings_config() -> Settings:
     """
     Provides Settings configured for Docker mode, using values from the global app settings
@@ -264,13 +276,17 @@ def get_docker_settings_config() -> Settings:
         TOP_K_RESULTS=3,
     )
 
+
 @pytest.fixture(scope="session")
-def docker_settings() -> Settings: # Renamed from user's get_docker_run_settings to be the fixture
+def docker_settings() -> (
+    Settings
+):  # Renamed from user's get_docker_run_settings to be the fixture
     """Fixture providing Settings configured for Docker mode."""
     return get_docker_settings_config()
 
+
 @pytest_asyncio.fixture(scope="session")
-async def docker_test_app(docker_settings:Settings) -> AsyncGenerator[FastAPI, None]:
+async def docker_test_app(docker_settings: Settings) -> AsyncGenerator[FastAPI, None]:
     """
     Creates a test FastAPI app instance configured for Docker mode for the session,
     applies Docker-specific overrides, and manages the app's lifespan.
@@ -296,7 +312,6 @@ async def docker_test_app(docker_settings:Settings) -> AsyncGenerator[FastAPI, N
         yield fastapi_app
 
 
-
 @pytest.fixture(scope="function")
 def docker_client(docker_test_app: FastAPI) -> TestClient:
     """
@@ -309,10 +324,10 @@ def docker_client(docker_test_app: FastAPI) -> TestClient:
         yield client
         print("docker_client teardown.")
 
+
 def is_docker_chromadb_available() -> bool:
     """Check if the Docker-based ChromaDB is reachable."""
     # Ensure you are using the correct heartbeat endpoint for your ChromaDB version
-
 
     docker_run_settings = get_docker_settings_config()
     heartbeat_url = f"{docker_run_settings.CHROMA_HOST.rstrip('/')}/api/v2/heartbeat"
