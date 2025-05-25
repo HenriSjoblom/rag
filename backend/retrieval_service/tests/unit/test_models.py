@@ -3,13 +3,7 @@ Unit tests for Pydantic models in the retrieval service.
 """
 
 import pytest
-from app.models import (
-    AddDocumentsRequest,
-    AddDocumentsResponse,
-    DocumentChunk,
-    RetrievalRequest,
-    RetrievalResponse,
-)
+from app.models import RetrievalRequest, RetrievalResponse
 from pydantic import ValidationError
 
 
@@ -26,6 +20,22 @@ class TestRetrievalRequest:
         with pytest.raises(ValidationError) as exc_info:
             RetrievalRequest(query="")
         assert "String should have at least 1 character" in str(exc_info.value)
+
+    def test_retrieval_request_whitespace_query(self):
+        """Test RetrievalRequest with whitespace query."""
+        request = RetrievalRequest(query="   test query   ")
+        assert request.query == "   test query   "
+
+    def test_retrieval_request_unicode(self):
+        """Test RetrievalRequest with unicode characters."""
+        request = RetrievalRequest(query="test query with émojis 🔍")
+        assert request.query == "test query with émojis 🔍"
+
+    def test_retrieval_request_very_long(self):
+        """Test RetrievalRequest with very long query."""
+        long_query = "test " * 1000
+        request = RetrievalRequest(query=long_query)
+        assert request.query == long_query
 
 
 class TestRetrievalResponse:
@@ -49,64 +59,45 @@ class TestRetrievalResponse:
         assert response.collection_name == "test_collection"
         assert response.query == "test query"
 
-
-class TestDocumentChunk:
-    """Test cases for DocumentChunk model."""
-
-    def test_document_chunk_valid(self):
-        """Test DocumentChunk with valid data."""
-        chunk = DocumentChunk(
-            id="chunk_1",
-            text="Test content",
-            metadata={"source": "doc.pdf"},
-            distance=0.5,
-        )
-        assert chunk.id == "chunk_1"
-        assert chunk.text == "Test content"
-        assert chunk.metadata == {"source": "doc.pdf"}
-        assert chunk.distance == 0.5
-
-    def test_document_chunk_negative_distance(self):
-        """Test that negative distance raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            DocumentChunk(id="chunk_1", text="Test content", distance=-0.1)
-        assert "Input should be greater than or equal to 0" in str(exc_info.value)
-
-
-class TestAddDocumentsRequest:
-    """Test cases for AddDocumentsRequest model."""
-
-    def test_add_documents_request_valid(self):
-        """Test AddDocumentsRequest with valid documents."""
-        request = AddDocumentsRequest(
-            documents={"doc1": "content1", "doc2": "content2"}
-        )
-        assert request.documents == {"doc1": "content1", "doc2": "content2"}
-
-    def test_add_documents_request_empty(self):
-        """Test AddDocumentsRequest with empty documents."""
-        request = AddDocumentsRequest(documents={})
-        assert request.documents == {}
-
-
-class TestAddDocumentsResponse:
-    """Test cases for AddDocumentsResponse model."""
-
-    def test_add_documents_response_valid(self):
-        """Test AddDocumentsResponse with valid data."""
-        response = AddDocumentsResponse(
-            added_count=5,
+    def test_retrieval_response_empty_chunks(self):
+        """Test RetrievalResponse with empty chunks list."""
+        response = RetrievalResponse(
+            chunks=[],
             collection_name="test_collection",
-            message="Successfully added documents",
+            query="no results query",
         )
-        assert response.added_count == 5
+        assert response.chunks == []
         assert response.collection_name == "test_collection"
-        assert response.message == "Successfully added documents"
+        assert response.query == "no results query"
 
-    def test_add_documents_response_negative_count(self):
-        """Test that negative added_count raises ValidationError."""
-        with pytest.raises(ValidationError) as exc_info:
-            AddDocumentsResponse(
-                added_count=-1, collection_name="test_collection", message="test"
-            )
-        assert "Input should be greater than or equal to 0" in str(exc_info.value)
+    def test_retrieval_response_many_chunks(self):
+        """Test RetrievalResponse with many chunks."""
+        chunks = [f"chunk_{i}" for i in range(100)]
+        response = RetrievalResponse(
+            chunks=chunks,
+            collection_name="test_collection",
+            query="test query",
+        )
+        assert len(response.chunks) == 100
+        assert response.chunks[0] == "chunk_0"
+        assert response.chunks[-1] == "chunk_99"
+
+    def test_retrieval_response_validation(self):
+        """Test RetrievalResponse field validation."""
+        # chunks must be a list
+        with pytest.raises(ValidationError):
+            RetrievalResponse(chunks="not a list")
+
+        # collection_name can be None or string
+        response1 = RetrievalResponse(collection_name=None)
+        assert response1.collection_name is None
+
+        response2 = RetrievalResponse(collection_name="test_collection")
+        assert response2.collection_name == "test_collection"
+
+        # query can be None or string
+        response3 = RetrievalResponse(query=None)
+        assert response3.query is None
+
+        response4 = RetrievalResponse(query="test query")
+        assert response4.query == "test query"

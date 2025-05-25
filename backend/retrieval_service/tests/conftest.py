@@ -12,12 +12,7 @@ import pytest_asyncio
 from app.config import Settings
 from app.deps import get_settings
 from app.main import app as fastapi_app
-from app.services.vector_search import (
-    VectorSearchService,
-    get_chroma_collection,
-    get_embedding_model,
-    lifespan_retrieval_service,
-)
+from app.services.vector_search import VectorSearchService
 from chromadb.api.models.Collection import Collection as ChromaCollectionModel
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -181,17 +176,10 @@ async def test_app(override_settings: Settings) -> AsyncGenerator[FastAPI, None]
     fastapi_app.dependency_overrides[get_settings] = lambda: override_settings
     print("Applied settings override.")
 
-    # Manually create and run the lifespan manager
-    lifespan_manager = lifespan_retrieval_service(
-        app=fastapi_app,
-        model_name=override_settings.EMBEDDING_MODEL_NAME,
-        chroma_path=override_settings.CHROMA_PATH,
-        collection_name=override_settings.CHROMA_COLLECTION_NAME,
-        chroma_mode="local",
-    )
-    print("Created lifespan manager.")
+    # Use the app's lifespan context manager directly
+    print("Starting lifespan context...")
     try:
-        async with lifespan_manager:
+        async with fastapi_app.router.lifespan_context(fastapi_app):
             yield fastapi_app
     finally:
         print("Tearing down test_app fixture (session scope)...")
