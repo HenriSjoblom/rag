@@ -3,3 +3,8 @@ uvicorn==0.34.*
 pydantic==2.10.*
 pydantic-settings==2.7.*
 httpx==0.28.*
+langchain==0.3.*
+pydantic==2.10.*
+pydantic-settings==2.7.*
+chromadb==0.6.*
+sentence-transformers==4.1.*

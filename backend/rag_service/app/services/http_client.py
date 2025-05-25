@@ -1,38 +1,55 @@
-# app/services/http_client.py
-import httpx
-from typing import Optional, Dict, Any, Union, List
+import logging
 from contextlib import asynccontextmanager
-from fastapi import HTTPException, status
+from typing import Any, Dict, List, Optional, Union
 
-# Global httpx client instance (managed by lifespan)
-_client: Optional[httpx.AsyncClient] = None
+import httpx
+from fastapi import FastAPI, HTTPException, status
 
-async def get_http_client() -> httpx.AsyncClient:
-    """
-    Dependency function to get the shared httpx.AsyncClient instance.
-    Relies on the lifespan manager to initialize and close the client.
-    """
-    if _client is None:
-        # This should ideally not happen if lifespan is managed correctly
-        # but serves as a fallback or indicates a setup issue.
-        raise RuntimeError("HTTP Client not initialized. Check FastAPI lifespan management.")
-    return _client
+logger = logging.getLogger(__name__)
+
+# This module's global HTTP client instance
+_http_client_instance: httpx.AsyncClient | None = None
+
 
 @asynccontextmanager
-async def lifespan_http_client(app, timeout: float):
+async def lifespan_http_client(app: FastAPI, timeout: float):
     """
-    Async context manager for managing the lifespan of the HTTP client.
-    To be used with FastAPI's lifespan event handler.
+    Manages the lifecycle of the global httpx.AsyncClient instance.
+    Initializes it on startup and closes it on shutdown.
     """
-    global _client
-    print("Initializing HTTP client...")
-    _client = httpx.AsyncClient(timeout=timeout)
+    global _http_client_instance
+    if _http_client_instance is not None:
+        logger.warning(
+            "HTTP client instance already exists during lifespan startup. This might indicate multiple initializations."
+        )
+
+    logger.info(f"Initializing global HTTP client with timeout: {timeout}s")
+    _http_client_instance = httpx.AsyncClient(timeout=timeout)
     try:
-        yield # Application runs here
+        yield
     finally:
-        print("Closing HTTP client...")
-        await _client.aclose()
-        _client = None # Clear the global instance
+        if _http_client_instance:
+            logger.info("Closing global HTTP client session.")
+            await _http_client_instance.aclose()
+            _http_client_instance = None  # Clear the instance after closing
+            logger.info("Global HTTP client session closed and instance cleared.")
+        else:
+            logger.warning("Attempted to close HTTP client, but no instance was found.")
+
+
+def get_global_http_client() -> httpx.AsyncClient:
+    """
+    Returns the globally managed httpx.AsyncClient instance.
+    Raises a RuntimeError if the client has not been initialized (e.g., lifespan did not run).
+    """
+    if _http_client_instance is None:
+        logger.error(
+            "Attempted to get HTTP client, but it's not initialized. Lifespan manager might not have run or has already shut down."
+        )
+        raise RuntimeError(
+            "Global HTTP client is not initialized. Ensure the application lifespan manager has run."
+        )
+    return _http_client_instance
 
 
 async def make_request(
@@ -60,7 +77,7 @@ async def make_request(
     """
     try:
         response = await client.request(method, url, json=json_data, params=params)
-        response.raise_for_status() # Raises HTTPStatusError for 4xx/5xx responses
+        response.raise_for_status()  # Raises HTTPStatusError for 4xx/5xx responses
         return response.json()
     except httpx.TimeoutException:
         raise HTTPException(
@@ -76,6 +93,6 @@ async def make_request(
     except httpx.HTTPStatusError as exc:
         # Handle specific errors from the downstream service
         raise HTTPException(
-            status_code=exc.response.status_code, # Propagate status code
+            status_code=exc.response.status_code,  # Propagate status code
             detail=f"Downstream service at {url} returned error: {exc.response.text}",
         )

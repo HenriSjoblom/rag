@@ -10,9 +10,9 @@ class Settings(BaseSettings):
 
     # Configure Pydantic settings to load from a .env file
     model_config = SettingsConfigDict(
-        env_file='.env', # Load from .env file in the root
+        env_file='.env',
         env_file_encoding='utf-8',
-        extra='ignore' # Ignore extra fields from .env
+        extra='ignore'
     )
 
 # Create a single instance of settings to be used across the application

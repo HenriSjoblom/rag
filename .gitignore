@@ -129,6 +129,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.solo
 .venv
 env/
 venv/
@@ -145,6 +146,12 @@ venv.bak/
 
 # mkdocs documentation
 /site
+
+# Ingestion service documents
+!ingestion-service/documents/*/
+ingestion-service/documents/
+!ingestion-service/documents/*/
+ingestion-service/test_documents/
 
 # mypy
 .mypy_cache/
@@ -169,3 +176,6 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+test_temp_data/
+data/

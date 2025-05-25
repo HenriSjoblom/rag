@@ -1,0 +1,21 @@
+[project]
+name = "generation-service"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115.6",
+    "langchain>=0.3.25",
+    "langchain-openai>=0.3.14",
+    "pydantic>=2.10.5",
+    "pydantic-settings>=2.7.1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.3.4",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.9.1",
+]

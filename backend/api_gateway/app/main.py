@@ -4,7 +4,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.routers import router as gateway_router
-from app.config import settings
+from app.config import Settings
+from app.services.http_client import lifespan_http_client
+from app.deps import get_settings
+
+
+settings: Settings = get_settings()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with lifespan_http_client(app, timeout=settings.HTTP_CLIENT_TIMEOUT):
+        yield
+
 
 app = FastAPI(
     title="API Gateway Service",
@@ -13,7 +24,7 @@ app = FastAPI(
 )
 
 # Include API routers
-app.include_router(gateway_router, prefix="/api/v0")
+app.include_router(gateway_router, prefix="/api/v1")
 
 # Add cors middleware
 origins = [

@@ -1,7 +1,32 @@
-# api_gateway/src/api/routes.py
-from fastapi import APIRouter, HTTPException
-
 import logging
+
+import httpx
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    UploadFile,
+    status,
+)
+
+from app.config import Settings
+from app.config import settings as app_settings
+from app.deps import (
+    get_chat_processor_service,
+    get_http_client,
+)
+from app.models import (
+    ChatRequest,
+    ChatResponse,
+    IngestionDeleteResponse,
+    IngestionStatusResponse,
+    IngestionUploadResponse,
+    RagDocumentDetail,
+    RagDocumentListResponse,
+    ServiceErrorResponse,
+)
+from app.services.chat_processor import ChatProcessorService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -273,7 +298,7 @@ async def list_documents_via_ingestion_service(
     http_client: httpx.AsyncClient = Depends(get_http_client),
     settings: Settings = Depends(lambda: app_settings),
 ):
-    ingestion_service_docs_url = f"{settings.INGESTION_SERVICE_URL}api/v1/documents/"
+    ingestion_service_docs_url = f"{settings.INGESTION_SERVICE_URL}api/v1/documents"
     logger.info(
         f"Requesting document list from Ingestion Service at {ingestion_service_docs_url}"
     )

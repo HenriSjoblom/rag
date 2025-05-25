@@ -1,203 +1,202 @@
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-from sentence_transformers import SentenceTransformer
-from typing import List, Optional, Dict, Any
-from contextlib import asynccontextmanager
-from fastapi import HTTPException, status
-import numpy as np
+import asyncio
 import logging
-import time
+from typing import Any, Dict, List
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+from app.config import Settings
+from app.services.chroma_manager import ChromaClientManager
+from app.services.embedding_manager import EmbeddingModelManager
+from app.services.vector_store_manager import VectorStoreManager
+from chromadb.errors import ChromaError
+from fastapi import HTTPException, status
+
 logger = logging.getLogger(__name__)
 
 
-# Global instances managed by lifespan
-_embedding_model: Optional[SentenceTransformer] = None
-_chroma_client: Optional[chromadb.ClientAPI] = None
-_chroma_collection: Optional[chromadb.Collection] = None
-
-async def get_embedding_model() -> SentenceTransformer:
-    """Dependency to get the loaded embedding model."""
-    if _embedding_model is None:
-        raise RuntimeError("Embedding model not initialized.")
-    return _embedding_model
-
-async def get_chroma_collection() -> chromadb.Collection:
-    """Dependency to get the ChromaDB collection object."""
-    if _chroma_collection is None:
-        raise RuntimeError("ChromaDB collection not initialized.")
-    return _chroma_collection
-
-@asynccontextmanager
-async def lifespan_retrieval_service(app, model_name: str, chroma_path: str, collection_name: str):
-    """Manages the lifespan of embedding model and ChromaDB client."""
-    global _embedding_model, _chroma_client, _chroma_collection
-
-    # --- For testing ---
-    if _embedding_model is not None and _chroma_collection is not None:
-        print("Lifespan: Resources already initialized (idempotency check). Skipping setup.")
-        # Ensure yield happens even if skipping setup, otherwise context won't work
-        try:
-             yield
-        finally:
-             pass # No teardown needed if setup was skipped
-        return # Exit early
-
-    # Load Model
-    print("Loading embedding model...")
-    print(f"Collection name: {collection_name}")
-    print(f"ChromaDB path: {chroma_path}")
-    logger.info(f"Loading embedding model: {model_name}...")
-    try:
-        _embedding_model = SentenceTransformer(model_name)
-        logger.info("Embedding model loaded successfully.")
-    except Exception as e:
-        logger.error(f"Failed to load embedding model '{model_name}': {e}", exc_info=True)
-        # Optionally re-raise or handle critical failure
-        raise RuntimeError(f"Failed to load embedding model: {e}") from e
-
-    # Connect to ChromaDB
-    try:
-        print("Trying to connect to ChromaDB...")
-        _chroma_client = chromadb.PersistentClient(path=chroma_path, settings=ChromaSettings(allow_reset=True))
-
-        print("ChromaDB connection successful.")
-        logger.info(f"Getting or creating ChromaDB collection: {collection_name}...")
-        _chroma_collection = _chroma_client.get_or_create_collection(name=collection_name)
-        logger.info(f"ChromaDB collection '{collection_name}' ready.")
-
-    except Exception as e:
-        logger.error(f"Failed to connect to or setup ChromaDB: {e}", exc_info=True)
-        _chroma_client = None
-        _chroma_collection = None
-        raise RuntimeError(f"Failed to initialize ChromaDB: {e}") from e
-
-    try:
-        yield # Application runs
-    finally:
-        # Cleanup
-        logger.info("Shutting down retrieval service resources...")
-        if _chroma_client:
-            try:
-                print("Resetting ChromaDB client...")
-                _chroma_client.reset() # This should release file locks
-                print("ChromaDB client reset successfully.")
-                logger.info("ChromaDB client reset.")
-                time.sleep(5.5)
-            except Exception as e:
-                print(f"Error resetting ChromaDB client: {e}")
-                logger.error(f"Error resetting ChromaDB client: {e}", exc_info=True)
-
-        _embedding_model = None # Allow garbage collection
-        _chroma_client = None
-        _chroma_collection = None
-        logger.info("Retrieval service resources released.")
-
-
 class VectorSearchService:
+    """Handles vector search operations for retrieval only."""
+
     def __init__(
         self,
-        embedding_model: SentenceTransformer,
-        chroma_collection: chromadb.Collection,
-        top_k: int,
-        distance_threshold: float = 1.0 # Adjust later this value based on experimentation
+        settings: Settings,
+        chroma_manager: ChromaClientManager,
+        embedding_manager: EmbeddingModelManager,
+        vector_store_manager: VectorStoreManager,
     ):
-        self.embedding_model = embedding_model
-        self.chroma_collection = chroma_collection
-        self.top_k = top_k
-        self.distance_threshold = distance_threshold # Store the threshold
+        self.settings = settings
+        self.chroma_manager = chroma_manager
+        self.embedding_manager = embedding_manager
+        self.vector_store_manager = vector_store_manager
+        logger.info("VectorSearchService initialized for retrieval operations.")
 
     def _embed_query(self, query: str) -> List[float]:
         """Generates embedding for the given query text."""
-        # Note: encode() returns a numpy array, convert to list for ChromaDB
+        if not query or not query.strip():
+            logger.error("Empty query provided for embedding")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Query cannot be empty.",
+            )
+
         try:
-            embedding = self.embedding_model.encode(query, convert_to_numpy=True)
-            # Some models might output multi-dimensional arrays, ensure it's 1D
+            embedding_model = self.embedding_manager.get_model()
+            embedding = embedding_model.encode(query.strip(), convert_to_numpy=True)
+
+            if embedding is None:
+                raise ValueError("Embedding model returned None")
+
             if embedding.ndim > 1:
-                 embedding = embedding.flatten() # Or handle appropriately based on model output
-            return embedding.tolist()
+                embedding = embedding.flatten()
+
+            embedding_list = embedding.tolist()
+
+            if not embedding_list or len(embedding_list) == 0:
+                raise ValueError("Embedding model returned empty result")
+
+            return embedding_list
+
+        except MemoryError as e:
+            logger.error(f"Out of memory during query embedding: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail="Insufficient memory to process query embedding.",
+            ) from e
+        except ValueError as e:
+            logger.error(f"Invalid input for query embedding: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid query format: {str(e)}",
+            ) from e
         except Exception as e:
             logger.error(f"Failed to embed query: {e}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to generate query embedding."
+                detail="Failed to generate query embedding.",
             ) from e
 
-    async def search(self, query: str) -> List[str]:
-        """
-        Embeds the query and performs similarity search in ChromaDB.
-
-        Returns:
-            A list of relevant document chunk texts.
-        """
-        logger.info(f"Search service using collection: '{self.chroma_collection.name}'")
-        logger.info(f"Embedding query: '{query[:50]}...'")
-        query_embedding = self._embed_query(query)
-
-        logger.info(f"Querying ChromaDB collection '{self.chroma_collection.name}' for top {self.top_k} results...")
+    async def _get_fresh_collection(self):
+        """Get a fresh collection instance."""
         try:
-            results = self.chroma_collection.query(
-                query_embeddings=[query_embedding], # Chroma expects a list of embeddings
-                n_results=self.top_k,
-                include=['documents', 'distances'] # We only need the document text content
+            return await asyncio.to_thread(self.vector_store_manager.get_collection)
+        except ConnectionError as e:
+            logger.error(f"Connection error getting collection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Vector database is currently unavailable.",
+            ) from e
+        except RuntimeError as e:
+            logger.error(f"Runtime error getting collection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Vector database collection not available: {str(e)}",
+            ) from e
+        except Exception as e:
+            logger.error(f"Unexpected error getting collection: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to access vector database collection.",
+            ) from e
+
+    async def search(self, query: str) -> List[Dict[str, Any]]:
+        """Search for relevant documents."""
+        if not query or not query.strip():
+            logger.warning("Empty query provided for search")
+            return []
+
+        try:
+            collection = await self._get_fresh_collection()
+            logger.info(
+                f"Search service using collection: '{collection.name}' (ID: {collection.id}) for query: '{query[:50]}...'"
             )
+            query_embedding = self._embed_query(query)
+
+            if self.settings.TOP_K_RESULTS <= 0:
+                raise ValueError("TOP_K_RESULTS must be greater than 0")
+
+            results = await asyncio.to_thread(
+                collection.query,
+                query_embeddings=[query_embedding],
+                n_results=self.settings.TOP_K_RESULTS,
+                include=["documents", "metadatas", "distances"],
+            )
+
+            if not results:
+                logger.info("No results returned from ChromaDB query")
+                return []
+
             logger.debug(f"Raw ChromaDB query results: {results}")
 
-            # Filter results based on distance
-            filtered_chunks = []
-            if results and results.get('ids') and results['ids'][0]:
-                ids = results['ids'][0]
-                documents = results['documents'][0]
-                distances = results['distances'][0]
+            processed_chunks = []
+            if results and results.get("ids") and results["ids"][0]:
+                ids_list = results["ids"][0]
+                # Ensure other lists are handled safely if not included or empty
+                documents_list = (
+                    results.get("documents")[0]
+                    if results.get("documents") and results["documents"]
+                    else [None] * len(ids_list)
+                )
+                metadatas_list = (
+                    results.get("metadatas")[0]
+                    if results.get("metadatas") and results["metadatas"]
+                    else [{}] * len(ids_list)
+                )
+                distances_list = (
+                    results.get("distances")[0]
+                    if results.get("distances") and results["distances"]
+                    else [float("inf")] * len(ids_list)
+                )
 
-                for doc, dist in zip(documents, distances):
-                    if dist <= self.distance_threshold:
-                        filtered_chunks.append(doc)
-                    else:
-                        logger.debug(f"Filtered out chunk due to distance {dist} > {self.distance_threshold}")
+                for i in range(len(ids_list)):
+                    try:
+                        doc_id = ids_list[i]
+                        doc_text = documents_list[i]
+                        metadata = metadatas_list[i]
+                        distance = distances_list[i]
 
-            logger.info(f"Returning {len(filtered_chunks)} chunks after distance filtering.")
-            return filtered_chunks
+                        if doc_id and doc_text:  # Only include valid results
+                            processed_chunks.append(
+                                {
+                                    "id": doc_id,
+                                    "text": doc_text,
+                                    "metadata": metadata if metadata else {},
+                                    "distance": distance
+                                    if distance is not None
+                                    else float("inf"),
+                                }
+                            )
+                    except (IndexError, TypeError) as e:
+                        logger.warning(f"Skipping malformed result at index {i}: {e}")
+                        continue
 
-        except Exception as e:
-            logger.error(f"ChromaDB query failed: {e}", exc_info=True)
+            logger.info(
+                f"Returning {len(processed_chunks)} chunks for query '{query[:50]}...'."
+            )
+            return processed_chunks
+
+        except HTTPException:
+            raise
+        except ChromaError as e:
+            logger.error(f"ChromaDB query error: {e}", exc_info=True)
+            if "does not exist" in str(e).lower() or "not found" in str(e).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Vector database collection '{self.settings.CHROMA_COLLECTION_NAME}' not found.",
+                )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to query vector database: {e}",
+                detail="Database error during search operation.",
             ) from e
-
-    async def add_documents(self, documents: Dict[str, str]) -> int:
-        """
-        Embeds and adds new documents to the ChromaDB collection.
-        Returns the number of documents added.
-        """
-        if not documents:
-            logger.warning("Add documents called with an empty dictionary.")
-            return 0
-
-        doc_ids = list(documents.keys())
-        doc_texts = list(documents.values())
-        logger.info(f"Adding {len(doc_ids)} documents to collection '{self.chroma_collection.name}'...")
-
-        try:
-            # Generate embeddings
-            logger.debug("Generating embeddings for new documents...")
-            embeddings = self.embedding_model.encode(doc_texts, convert_to_tensor=False)
-            logger.debug(f"Generated {len(embeddings)} embeddings.")
-
-            self.chroma_collection.add(
-                ids=doc_ids,
-                documents=doc_texts,
-                embeddings=embeddings
-            )
-            logger.info(f"Successfully added/updated {len(doc_ids)} documents.")
-            return len(doc_ids)
-
-        except Exception as e:
-            logger.error(f"Error adding documents to ChromaDB: {e}", exc_info=True)
+        except ValueError as e:
+            logger.error(f"Configuration error during search: {e}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to add documents to the collection: {e}"
+                detail=f"Search configuration error: {str(e)}",
+            ) from e
+        except Exception as e:
+            logger.error(
+                f"ChromaDB query failed for collection '{self.settings.CHROMA_COLLECTION_NAME}': {e}",
+                exc_info=True,
             )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to query vector database: {str(e)}",
+            ) from e
