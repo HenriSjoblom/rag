@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class IngestionStatus(BaseModel):
@@ -9,12 +9,6 @@ class IngestionStatus(BaseModel):
     documents_processed: int = Field(default=0, ge=0)
     chunks_added: int = Field(default=0, ge=0)
     errors: List[str] = Field(default_factory=list)
-
-    @validator("documents_processed", "chunks_added")
-    def validate_non_negative(cls, v):
-        if v < 0:
-            raise ValueError("Must be non-negative")
-        return v
 
 
 class IngestionResponse(BaseModel):
@@ -37,11 +31,11 @@ class DocumentListResponse(BaseModel):
     count: int = Field(..., ge=0)
     documents: List[DocumentDetail]
 
-    @validator("count")
-    def validate_count_matches_documents(cls, v, values):
-        if "documents" in values and len(values["documents"]) != v:
+    @model_validator(mode="after")
+    def validate_count_matches_documents(self):
+        if len(self.documents) != self.count:
             raise ValueError("Count must match number of documents")
-        return v
+        return self
 
 
 class IngestionStatusResponse(BaseModel):

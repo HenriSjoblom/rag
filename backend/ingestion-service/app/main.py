@@ -1,9 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI
 
-from app.deps import get_settings
+from app.deps import get_ingestion_state_service, get_settings
 from app.models import IngestionStatusResponse
 from app.routers import collection, documents, ingestion
 from app.services.chroma_manager import (
@@ -76,8 +76,9 @@ async def health_check():
     description="Returns the current status of ingestion process including completion details.",
     tags=["ingestion"],
 )
-async def get_ingestion_status(request: Request):
+async def get_ingestion_status(
+    state_service: IngestionStateService = Depends(get_ingestion_state_service),
+):
     """Get the current ingestion status."""
-    state_service = request.app.state.ingestion_state_service
     status_info = await state_service.get_status()
     return IngestionStatusResponse(**status_info)

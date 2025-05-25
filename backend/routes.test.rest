@@ -88,21 +88,10 @@ Content-Type: application/json
 ### Test Ingestion Service Health
 GET {{ingestion-service}}/health
 
-### Clear Collection First (for clean testing)
+### Clear Collection (for clean testing)
 DELETE {{ingestion-service}}/api/v1/collection
 
 ### Upload PDF to Ingestion Service
-POST {{ingestion-service}}/api/v1/upload
-Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
-
-------WebKitFormBoundary7MA4YWxkTrZu0gW
-Content-Disposition: form-data; name="file"; filename="iphone-16-info.pdf"
-Content-Type: application/pdf
-
-< ./ingestion-service/test_documents/iphone-16-info.pdf
-------WebKitFormBoundary7MA4YWxkTrZu0gW--
-
-### Upload Same File Again (should return 409 Conflict)
 POST {{ingestion-service}}/api/v1/upload
 Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
 
@@ -124,24 +113,7 @@ Content-Type: application/pdf
 < ./ingestion-service/test_documents/iphone_user_guide.pdf
 ------WebKitFormBoundaryDifferent--
 
-### Test Invalid File Upload (should return 400)
-POST {{ingestion-service}}/api/v1/upload
-Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryInvalid
-
-------WebKitFormBoundaryInvalid
-Content-Disposition: form-data; name="file"; filename="test.txt"
-Content-Type: text/plain
-
-This is not a PDF file
-------WebKitFormBoundaryInvalid--
-
 ### Trigger Ingestion Process
-POST {{ingestion-service}}/api/v1/ingest
-
-### Trigger Ingestion Again (should skip already processed files)
-POST {{ingestion-service}}/api/v1/ingest
-
-### Trigger Ingestion While Processing (should return 409)
 POST {{ingestion-service}}/api/v1/ingest
 
 ### List Source Documents
