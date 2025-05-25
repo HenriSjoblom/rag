@@ -6,7 +6,12 @@ function DocumentStatusDisplay({
 }) {
   if (isParentProcessing) {
     return (
-      <p className="text-blue-600 animate-pulse">Processing document...</p>
+      <div className="text-blue-600">
+        <div className="flex items-center space-x-2">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+          <span>Processing document...</span>
+        </div>
+      </div>
     );
   }
 

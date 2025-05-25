@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect } from "react";
 import {
   fetchUploadedDocumentName,
-  uploadDocument,
+  uploadDocumentOnly,
   deleteUploadedDocument,
+  waitForIngestionCompletion,
 } from "../services/api";
 import DocumentStatusDisplay from "./DocumentStatusDisplay";
 import DocumentUploadForm from "./DocumentUploadForm";
 
 function DocumentManager({ onDocumentNameChange, onProcessingStateChange }) {
   const [uploadedDocName, setUploadedDocName] = useState(null);
-  const [isProcessing, setIsProcessing] = useState(false); // Overall processing state for this manager
+  const [isProcessing, setIsProcessing] = useState(false);
   const [docError, setDocError] = useState(null);
+  const [processingStatus, setProcessingStatus] = useState(null); // New state for processing details
   const internalFileInputRef = useRef(null);
 
   const loadDocument = async () => {
@@ -44,18 +46,73 @@ function DocumentManager({ onDocumentNameChange, onProcessingStateChange }) {
     setIsProcessing(true);
     onProcessingStateChange(true);
     setDocError(null);
+    setProcessingStatus({ status: "Starting upload..." });
+
     try {
-      await uploadDocument(fileToUpload, uploadedDocName);
-      await loadDocument(); // Refresh document status
-      // Clear the file input in DocumentUploadForm
+      // First upload the file
+      console.log("DocumentManager: Starting file upload...");
+      await uploadDocumentOnly(fileToUpload, uploadedDocName);
+      console.log(
+        "DocumentManager: File uploaded successfully, waiting for ingestion..."
+      );
+
+      setProcessingStatus({ status: "File uploaded, starting ingestion..." });
+
+      // Then wait for ingestion to complete with progress updates
+      const finalStatus = await waitForIngestionCompletion(
+        60, // max attempts
+        2000, // interval
+        (progress) => {
+          // Update processing status with progress info
+          setProcessingStatus({
+            status: progress.status || "Processing...",
+            attempt: progress.attempt,
+            maxAttempts: progress.maxAttempts,
+            documentsProcessed: progress.documentsProcessed,
+            chunksAdded: progress.chunksAdded,
+            error: progress.error,
+          });
+        }
+      );
+
+      if (finalStatus.errors && finalStatus.errors.length > 0) {
+        console.warn(
+          "DocumentManager: Ingestion completed with errors:",
+          finalStatus.errors
+        );
+        setDocError(
+          `Upload completed with warnings: ${finalStatus.errors.join(", ")}`
+        );
+      } else {
+        console.log("DocumentManager: Ingestion completed successfully!");
+        setProcessingStatus({
+          status: "Completed successfully!",
+          documentsProcessed: finalStatus.documents_processed,
+          chunksAdded: finalStatus.chunks_added,
+        });
+
+        // Show completion status briefly before clearing
+        setTimeout(() => {
+          setProcessingStatus(null);
+        }, 2000);
+      }
+
+      // Refresh document status
+      await loadDocument();
+
+      // Clear the file input
       if (internalFileInputRef.current) {
         internalFileInputRef.current.value = "";
       }
     } catch (err) {
-      console.error("DocumentManager: Document upload failed:", err);
-      setDocError(err.message || "An error occurred during upload.");
-      // Even on error, try to load the current state, as a partial operation might have occurred
+      console.error("DocumentManager: Upload/ingestion failed:", err);
+      setDocError(err.message || "An error occurred during upload/ingestion.");
+      setProcessingStatus(null);
+      // Try to refresh status even on error
       await loadDocument();
+    } finally {
+      setIsProcessing(false);
+      onProcessingStateChange(false);
     }
   };
 
@@ -83,6 +140,7 @@ function DocumentManager({ onDocumentNameChange, onProcessingStateChange }) {
         docError={docError}
         uploadedDocName={uploadedDocName}
         onInitiateDelete={handleInitiateDelete}
+        processingStatus={processingStatus}
       />
       <DocumentUploadForm
         uploadedDocName={uploadedDocName}
