@@ -62,6 +62,7 @@ class IngestionUploadResponse(BaseModel):
     status: str
     documents_found: Optional[int] = None
     message: str
+    filename: Optional[str] = None
 
 
 class IngestionDeleteResponse(BaseModel):

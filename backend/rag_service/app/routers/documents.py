@@ -128,6 +128,7 @@ async def upload_document_for_ingestion(
                 status="Upload accepted",
                 documents_found=None,
                 message="File upload accepted by ingestion service",
+                filename=file.filename,
             )
 
         try:
@@ -140,6 +141,7 @@ async def upload_document_for_ingestion(
                 status="Upload accepted",
                 documents_found=None,
                 message="File upload accepted by ingestion service",
+                filename=file.filename,
             )
 
         # Map to our IngestionUploadResponse model
@@ -149,6 +151,7 @@ async def upload_document_for_ingestion(
             message=ingestion_response_data.get(
                 "message", "File uploaded successfully"
             ),
+            filename=ingestion_response_data.get("filename", file.filename),
         )
 
     except httpx.ConnectError as connect_error:
