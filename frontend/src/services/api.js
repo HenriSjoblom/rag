@@ -8,6 +8,8 @@ const CHAT_BACKEND_URL = `${import.meta.env.VITE_API_BASE_URL}chat`;
  */
 export const fetchUploadedDocumentName = async () => {
   console.log("API Service: Fetching uploaded document...");
+  console.log(`Document URL: ${DOCUMENTS_BASE_URL}`);
+  console.log("API Service: Fetching document name...");
   const res = await fetch(DOCUMENTS_BASE_URL);
   if (!res.ok) {
     const errorData = await res
@@ -126,6 +128,7 @@ export const uploadDocument = async (
  */
 export const deleteUploadedDocument = async () => {
   console.log("API Service: Deleting document...");
+  console.log(`Document URL: ${DOCUMENTS_BASE_URL}`);
   const res = await fetch(DOCUMENTS_BASE_URL, { method: "DELETE" });
   if (!res.ok) {
     const errorData = await res

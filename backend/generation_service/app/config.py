@@ -1,25 +1,63 @@
+import logging
+from typing import Optional
+
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, SecretStr
-from typing import Literal, Optional
+
+logger = logging.getLogger(__name__)
+
 
 class Settings(BaseSettings):
-    """Loads and validates application settings."""
-    LLM_PROVIDER: Literal["openai"] = Field("openai", validation_alias='LLM_PROVIDER')
-    LLM_MODEL_NAME: str = Field("gpt-4o", validation_alias='LLM_MODEL_NAME')
-    LLM_TEMPERATURE: float = Field(0.3, ge=0.0, le=2.0, validation_alias='LLM_TEMPERATURE')
-    LLM_MAX_TOKENS: int = Field(500, gt=0, validation_alias='LLM_MAX_TOKENS')
+    """Application settings with validation."""
 
-    # --- Provider Specific API Keys ---
-    OPENAI_API_KEY: Optional[SecretStr] = Field(None, validation_alias='OPENAI_API_KEY')
-
-    model_config = SettingsConfigDict(
-        env_file='.env',
-        env_file_encoding='utf-8',
-        extra='ignore'
+    # LLM Configuration
+    LLM_PROVIDER: str = Field(
+        default="openai", description="LLM provider (openai, etc.)"
+    )
+    LLM_MODEL_NAME: str = Field(default="gpt-3.5-turbo", description="LLM model name")
+    LLM_TEMPERATURE: float = Field(
+        default=0.7, ge=0.0, le=2.0, description="LLM temperature"
+    )
+    LLM_MAX_TOKENS: int = Field(
+        default=500, ge=1, le=4000, description="Maximum tokens for LLM response"
     )
 
-settings = Settings()
+    # API Keys
+    OPENAI_API_KEY: Optional[SecretStr] = Field(
+        default=None, description="OpenAI API key"
+    )
 
-# Security check: Ensure API key is loaded if provider is OpenAI
-if settings.LLM_PROVIDER == "openai" and not settings.OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY is missing in environment variables or .env file.")
+    # Service Configuration
+    LOG_LEVEL: str = Field(default="INFO", description="Logging level")
+
+    @field_validator("LLM_PROVIDER")
+    @classmethod
+    def validate_llm_provider(cls, v: str) -> str:
+        """Validate LLM provider."""
+        supported_providers = ["openai"]
+        if v not in supported_providers:
+            raise ValueError(
+                f"Unsupported LLM provider: {v}. Supported: {supported_providers}"
+            )
+        return v
+
+    @model_validator(mode="after")
+    def validate_openai_configuration(self) -> "Settings":
+        """Validate OpenAI configuration requirements."""
+        if self.LLM_PROVIDER == "openai" and not self.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY is required when using OpenAI provider")
+        return self
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+# Create global settings instance
+try:
+    settings = Settings()
+    logger.info(
+        f"Settings loaded successfully with LLM provider: {settings.LLM_PROVIDER}"
+    )
+except Exception as e:
+    logger.error(f"Failed to load settings: {e}")
+    raise

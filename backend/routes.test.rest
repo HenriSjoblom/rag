@@ -39,8 +39,8 @@ Content-Type: application/pdf
 < ./ingestion-service/test_documents/iphone-16-info.pdf
 ------WebKitFormBoundaryRAGUpload--
 
-### List Documents via RAG Service
-GET {{rag-service}}/api/v1/documents
+### List Documents via RAG Service (with trailing slash)
+GET {{rag-service}}/api/v1/documents/
 
 ### Delete Documents via RAG Service
 DELETE {{rag-service}}/api/v1/documents
@@ -116,7 +116,10 @@ Content-Type: application/pdf
 ### Trigger Ingestion Process
 POST {{ingestion-service}}/api/v1/ingest
 
-### List Source Documents
+### List Source Documents (with trailing slash)
+GET {{ingestion-service}}/api/v1/documents/
+
+### List Source Documents (without trailing slash)
 GET {{ingestion-service}}/api/v1/documents
 
 ### Get Ingestion Status
