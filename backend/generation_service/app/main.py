@@ -1,11 +1,15 @@
-from fastapi import FastAPI
 import logging
 
-from app.routers import router
-from app.config import settings
+from fastapi import FastAPI
 
-# Configure basic logging
-logging.basicConfig(level=logging.INFO)
+from app.config import settings
+from app.routers import generation, health
+
+# Configure logging with better format and level handling
+logging.basicConfig(
+    level=getattr(logging, getattr(settings, "LOG_LEVEL", "INFO"), logging.INFO),
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
@@ -14,10 +18,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Include API routers
-app.include_router(router, prefix="/api/v1")
+# Include API routers with proper organization
+api_prefix = "/api/v1"
+app.include_router(generation.router, prefix=api_prefix)
+app.include_router(health.router)
 
-@app.get("/health", tags=["Health"])
-async def health_check():
-    """Basic health check endpoint."""
-    return {"status": "ok", "llm_provider": settings.LLM_PROVIDER, "llm_model": settings.LLM_MODEL_NAME}
+logger.info("Generation Service initialized successfully")

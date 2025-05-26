@@ -239,7 +239,7 @@ async def upload_document_for_ingestion(
             error_detail = http_status_error.response.json().get(
                 "detail", str(http_status_error)
             )
-        except:
+        except Exception:
             error_detail = f"HTTP {http_status_error.response.status_code}: {http_status_error.response.text}"
 
         # Map the status code from ingestion service to appropriate RAG service status
@@ -298,7 +298,7 @@ async def list_documents_via_ingestion_service(
     http_client: httpx.AsyncClient = Depends(get_http_client),
     settings: Settings = Depends(lambda: app_settings),
 ):
-    ingestion_service_docs_url = f"{settings.INGESTION_SERVICE_URL}api/v1/documents"
+    ingestion_service_docs_url = f"{settings.INGESTION_SERVICE_URL}api/v1/documents/"
     logger.info(
         f"Requesting document list from Ingestion Service at {ingestion_service_docs_url}"
     )
@@ -372,7 +372,7 @@ async def delete_all_documents_and_ingested_data(
     http_client: httpx.AsyncClient = Depends(get_http_client),
     settings: Settings = Depends(lambda: app_settings),
 ):
-    ingestion_service_delete_url = f"{settings.INGESTION_SERVICE_URL}api/v1/collection"
+    ingestion_service_delete_url = f"{settings.INGESTION_SERVICE_URL}api/v1/collection/"
     logger.info(
         f"Requesting Ingestion Service to delete data at {ingestion_service_delete_url}"
     )

@@ -55,11 +55,11 @@ def get_file_management_service(
 
 def get_collection_manager_service(
     settings: Settings = Depends(get_settings),
-    request: Request = None,
+    request: Request = Depends(lambda r: r),
 ) -> CollectionManagerService:
     """Dependency to get CollectionManagerService instance."""
-    chroma_manager = request.app.state.chroma_manager if request else None
-    vector_store_manager = request.app.state.vector_store_manager if request else None
+    chroma_manager = request.app.state.chroma_manager
+    vector_store_manager = request.app.state.vector_store_manager
     return CollectionManagerService(settings, chroma_manager, vector_store_manager)
 
 
