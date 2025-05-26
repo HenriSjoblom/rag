@@ -98,7 +98,7 @@ async def upload_file(
         logger.error(f"Unexpected error during file upload: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save uploaded file.",
+            detail="Failed to save uploaded file.",  # Generic message loses context
         )
 
     # Trigger ingestion if requested and not already running

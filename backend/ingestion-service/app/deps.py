@@ -54,8 +54,8 @@ def get_file_management_service(
 
 
 def get_collection_manager_service(
+    request: Request,
     settings: Settings = Depends(get_settings),
-    request: Request = Depends(lambda r: r),
 ) -> CollectionManagerService:
     """Dependency to get CollectionManagerService instance."""
     chroma_manager = request.app.state.chroma_manager
