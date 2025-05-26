@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     """Request model for initiating a chat interaction."""
 
-    user_id: str = Field(..., description="Unique identifier for the user session.")
     message: str = Field(..., min_length=1, description="The user's message.")
 
 
@@ -39,7 +38,6 @@ class GenerationResponse(BaseModel):
 class ChatResponse(BaseModel):
     """Response model sent back to the client."""
 
-    user_id: str = Field(..., description="Unique identifier for the user session.")
     query: str = Field(..., description="The original user query.")
     response: str = Field(..., description="The AI-generated response.")
 

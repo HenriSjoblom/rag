@@ -130,15 +130,13 @@ class ChatProcessorService:
                 detail=f"Generation service is unavailable or encountered an error: {str(e)}",
             )
 
-    async def process(self, user_id: str, query: str) -> str:
+    async def process(self, query: str) -> str:
         """
         Orchestrates the RAG pipeline:
         1. Calls retrieval service to get context.
         2. Calls generation service with query and context to get an answer.
         """
-        logger.info(
-            f"Processing chat for user_id: {user_id}, query: '{query[:100]}...'"
-        )
+        logger.info(f"Processing chat query: '{query[:100]}...'")
 
         # Call Retrieval Service
         try:
@@ -161,7 +159,7 @@ class ChatProcessorService:
             ai_response = await self._call_generation_service(
                 user_query=query, context_chunks=retrieved_chunks
             )
-            logger.info(f"Generated AI response for user_id: {user_id}")
+            logger.info("Generated AI response")
             return ai_response
         except HTTPException as e:
             logger.error(f"Failed to generate response for query '{query}': {e.detail}")

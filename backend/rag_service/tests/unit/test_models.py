@@ -19,42 +19,41 @@ class TestChatRequest:
 
     def test_chat_request_valid(self):
         """Test ChatRequest with valid data."""
-        request = ChatRequest(user_id="user123", message="Hello, how are you?")
-        assert request.user_id == "user123"
+        request = ChatRequest(message="Hello, how are you?")
         assert request.message == "Hello, how are you?"
 
     def test_chat_request_empty_message(self):
         """Test that empty message raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            ChatRequest(user_id="user123", message="")
+            ChatRequest(message="")
         assert "String should have at least 1 character" in str(exc_info.value)
 
     def test_chat_request_missing_user_id(self):
-        """Test that missing user_id raises ValidationError."""
+        """Test that missing message raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            ChatRequest(message="Hello")
+            ChatRequest()  # missing message
         assert "Field required" in str(exc_info.value)
 
     def test_chat_request_missing_message(self):
         """Test that missing message raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            ChatRequest(user_id="user123")
+            ChatRequest()  # missing message
         assert "Field required" in str(exc_info.value)
 
     def test_chat_request_whitespace_message(self):
         """Test ChatRequest with whitespace message."""
-        request = ChatRequest(user_id="user123", message="   Hello   ")
+        request = ChatRequest(message="   Hello   ")
         assert request.message == "   Hello   "
 
     def test_chat_request_unicode(self):
         """Test ChatRequest with unicode characters."""
-        request = ChatRequest(user_id="user123", message="Hello with émojis 🤖")
+        request = ChatRequest(message="Hello with émojis 🤖")
         assert request.message == "Hello with émojis 🤖"
 
     def test_chat_request_very_long_message(self):
         """Test ChatRequest with very long message."""
         long_message = "Hello " * 1000
-        request = ChatRequest(user_id="user123", message=long_message)
+        request = ChatRequest(message=long_message)
         assert request.message == long_message
 
 
@@ -63,20 +62,17 @@ class TestChatResponse:
 
     def test_chat_response_valid(self):
         """Test ChatResponse with valid data."""
-        response = ChatResponse(
-            user_id="test_user", query="How are you?", response="Hello, I'm doing well!"
-        )
+        response = ChatResponse(query="How are you?", response="Hello, I'm doing well!")
         assert response.response == "Hello, I'm doing well!"
 
     def test_chat_response_empty_response(self):
         """Test ChatResponse with empty response."""
-        response = ChatResponse(user_id="test_user", query="How are you?", response="")
+        response = ChatResponse(query="How are you?", response="")
         assert response.response == ""
 
     def test_chat_response_unicode(self):
         """Test ChatResponse with unicode characters."""
         response = ChatResponse(
-            user_id="test_user",
             query="How are you?",
             response="Response with émojis 🤖",
         )
@@ -85,7 +81,7 @@ class TestChatResponse:
     def test_chat_response_missing_response(self):
         """Test that missing response raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            ChatResponse(user_id="test", query="test")  # missing response
+            ChatResponse(query="test")  # missing response
         assert "Field required" in str(exc_info.value)
 
 
@@ -105,13 +101,13 @@ class TestRetrievalRequest:
     def test_retrieval_request_missing_query(self):
         """Test that missing query raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            RetrievalRequest()
+            RetrievalRequest()  # missing query
         assert "Field required" in str(exc_info.value)
 
     def test_retrieval_request_unicode(self):
         """Test RetrievalRequest with unicode characters."""
-        request = RetrievalRequest(query="test query with émojis 🔍")
-        assert request.query == "test query with émojis 🔍"
+        request = RetrievalRequest(query="unicode 🤖 test")
+        assert request.query == "unicode 🤖 test"
 
 
 class TestRetrievalResponse:
@@ -119,32 +115,29 @@ class TestRetrievalResponse:
 
     def test_retrieval_response_valid(self):
         """Test RetrievalResponse with valid chunks."""
-        chunks = ["chunk 1", "chunk 2", "chunk 3"]
-        response = RetrievalResponse(chunks=chunks)
-        assert response.chunks == chunks
+        response = RetrievalResponse(chunks=["chunk1", "chunk2"])
+        assert response.chunks == ["chunk1", "chunk2"]
 
     def test_retrieval_response_empty_chunks(self):
-        """Test RetrievalResponse with empty chunks list."""
+        """Test RetrievalResponse with empty chunks."""
         response = RetrievalResponse(chunks=[])
         assert response.chunks == []
 
     def test_retrieval_response_missing_chunks(self):
         """Test that missing chunks raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            RetrievalResponse()
+            RetrievalResponse()  # missing chunks
         assert "Field required" in str(exc_info.value)
 
     def test_retrieval_response_validation(self):
-        """Test RetrievalResponse field validation."""
-        # chunks must be a list
+        """Test RetrievalResponse validation with invalid chunks."""
         with pytest.raises(ValidationError):
             RetrievalResponse(chunks="not a list")
 
     def test_retrieval_response_unicode_chunks(self):
         """Test RetrievalResponse with unicode chunks."""
-        chunks = ["chunk with émojis 🔍", "another chunk 🤖"]
-        response = RetrievalResponse(chunks=chunks)
-        assert response.chunks == chunks
+        response = RetrievalResponse(chunks=["chunk 🤖", "test"])
+        assert response.chunks == ["chunk 🤖", "test"]
 
 
 class TestGenerationRequest:
@@ -152,45 +145,37 @@ class TestGenerationRequest:
 
     def test_generation_request_valid(self):
         """Test GenerationRequest with valid data."""
-        request = GenerationRequest(
-            query="What is AI?",
-            context_chunks=[
-                "AI is artificial intelligence",
-                "AI can help solve problems",
-            ],
-        )
-        assert request.query == "What is AI?"
-        assert len(request.context_chunks) == 2
+        request = GenerationRequest(query="test query", context_chunks=["chunk1"])
+        assert request.query == "test query"
+        assert request.context_chunks == ["chunk1"]
 
     def test_generation_request_empty_context(self):
-        """Test GenerationRequest with empty context chunks."""
-        request = GenerationRequest(query="What is AI?", context_chunks=[])
-        assert request.query == "What is AI?"
+        """Test GenerationRequest with empty context."""
+        request = GenerationRequest(query="test query", context_chunks=[])
         assert request.context_chunks == []
 
     def test_generation_request_missing_fields(self):
         """Test that missing required fields raise ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            GenerationRequest(query="What is AI?")
+            GenerationRequest(query="test")  # missing context_chunks
         assert "Field required" in str(exc_info.value)
 
         with pytest.raises(ValidationError) as exc_info:
-            GenerationRequest(context_chunks=["context"])
+            GenerationRequest(context_chunks=["chunk"])  # missing query
         assert "Field required" in str(exc_info.value)
 
     def test_generation_request_validation(self):
-        """Test GenerationRequest field validation."""
-        # context_chunks must be a list
+        """Test GenerationRequest validation with invalid context_chunks."""
         with pytest.raises(ValidationError):
-            GenerationRequest(query="What is AI?", context_chunks="not a list")
+            GenerationRequest(query="test", context_chunks="not a list")
 
     def test_generation_request_unicode(self):
         """Test GenerationRequest with unicode characters."""
         request = GenerationRequest(
-            query="What is AI? 🤖", context_chunks=["AI context with émojis 🔍"]
+            query="unicode 🤖 query", context_chunks=["context 🤖"]
         )
-        assert request.query == "What is AI? 🤖"
-        assert request.context_chunks == ["AI context with émojis 🔍"]
+        assert request.query == "unicode 🤖 query"
+        assert request.context_chunks == ["context 🤖"]
 
 
 class TestGenerationResponse:
@@ -198,8 +183,8 @@ class TestGenerationResponse:
 
     def test_generation_response_valid(self):
         """Test GenerationResponse with valid answer."""
-        response = GenerationResponse(answer="AI is artificial intelligence.")
-        assert response.answer == "AI is artificial intelligence."
+        response = GenerationResponse(answer="test answer")
+        assert response.answer == "test answer"
 
     def test_generation_response_empty_answer(self):
         """Test GenerationResponse with empty answer."""
@@ -209,10 +194,10 @@ class TestGenerationResponse:
     def test_generation_response_missing_answer(self):
         """Test that missing answer raises ValidationError."""
         with pytest.raises(ValidationError) as exc_info:
-            GenerationResponse()
+            GenerationResponse()  # missing answer
         assert "Field required" in str(exc_info.value)
 
     def test_generation_response_unicode(self):
         """Test GenerationResponse with unicode characters."""
-        response = GenerationResponse(answer="AI response with émojis 🤖")
-        assert response.answer == "AI response with émojis 🤖"
+        response = GenerationResponse(answer="unicode 🤖 answer")
+        assert response.answer == "unicode 🤖 answer"
