@@ -30,7 +30,7 @@ class ChatProcessorService:
         self, query: str, top_k: int = 5
     ) -> List[Dict[str, Any]]:  # Return type is List of Dictionaries
         """Calls the retrieval microservice."""
-        retrieval_url = f"{self.retrieval_service_url.rstrip('/')}/api/v1/retrieve"
+        retrieval_url = f"{str(self.retrieval_service_url).rstrip('/')}/api/v1/retrieve"
         payload = RetrievalRequest(query=query, top_k=top_k)
 
         logger.debug(
@@ -88,14 +88,15 @@ class ChatProcessorService:
     ) -> str:
         """Calls the generation microservice."""
         # Use the passed-in URL
-        generation_url = f"{self.generation_service_url.rstrip('/')}/api/v1/generate"
+        generation_url = (
+            f"{str(self.generation_service_url).rstrip('/')}/api/v1/generate"
+        )
 
         prepared_context_chunks = [
             chunk.get("text", "")
             for chunk in context_chunks
             if chunk.get("text") is not None  # Ensure text key exists and is not None
         ]
-
 
         payload = GenerationRequest(
             query=user_query, context_chunks=prepared_context_chunks

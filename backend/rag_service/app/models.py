@@ -14,6 +14,7 @@ class RetrievalRequest(BaseModel):
     """Data sent TO the retrieval service."""
 
     query: str
+    top_k: int = Field(default=5, description="Number of top chunks to retrieve.")
 
 
 class RetrievalResponse(BaseModel):
@@ -38,7 +39,9 @@ class GenerationResponse(BaseModel):
 class ChatResponse(BaseModel):
     """Response model sent back to the client."""
 
-    response: str
+    user_id: str = Field(..., description="Unique identifier for the user session.")
+    query: str = Field(..., description="The original user query.")
+    response: str = Field(..., description="The AI-generated response.")
 
 
 class ErrorDetail(BaseModel):

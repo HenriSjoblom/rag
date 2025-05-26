@@ -9,6 +9,8 @@ dependencies = [
     "langchain>=0.3.14",
     "pydantic>=2.10.5",
     "pydantic-settings>=2.7.1",
+    "pytest-cov>=6.1.1",
+    "python-multipart>=0.0.12",
     "uvicorn>=0.34.0",
 ]
 
@@ -16,5 +18,7 @@ dependencies = [
 dev = [
     "pyright>=1.1.391",
     "pytest>=8.3.4",
+    "pytest-asyncio>=0.24.0",
+    "pytest-mock>=3.14.0",
     "ruff>=0.9.1",
 ]
