@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     """Request model for initiating a chat interaction."""
 
-    user_id: str = Field(..., description="Unique identifier for the user session.")
     message: str = Field(..., min_length=1, description="The user's message.")
 
 
@@ -14,6 +13,7 @@ class RetrievalRequest(BaseModel):
     """Data sent TO the retrieval service."""
 
     query: str
+    top_k: int = Field(default=5, description="Number of top chunks to retrieve.")
 
 
 class RetrievalResponse(BaseModel):
@@ -38,7 +38,8 @@ class GenerationResponse(BaseModel):
 class ChatResponse(BaseModel):
     """Response model sent back to the client."""
 
-    response: str
+    query: str = Field(..., description="The original user query.")
+    response: str = Field(..., description="The AI-generated response.")
 
 
 class ErrorDetail(BaseModel):
@@ -61,6 +62,7 @@ class IngestionUploadResponse(BaseModel):
     status: str
     documents_found: Optional[int] = None
     message: str
+    filename: Optional[str] = None
 
 
 class IngestionDeleteResponse(BaseModel):

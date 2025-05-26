@@ -178,7 +178,7 @@ class IngestionProcessorService:
 
         return 0
 
-    def run_ingestion(self) -> IngestionStatus:
+    def run_ingestion(self) -> IngestionStatus:  # Sync method
         """Executes the full ingestion pipeline."""
         status = IngestionStatus()
         logger.info("Starting ingestion process...")

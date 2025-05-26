@@ -30,7 +30,7 @@ class ChatProcessorService:
         self, query: str, top_k: int = 5
     ) -> List[Dict[str, Any]]:  # Return type is List of Dictionaries
         """Calls the retrieval microservice."""
-        retrieval_url = f"{self.retrieval_service_url.rstrip('/')}/api/v1/retrieve"
+        retrieval_url = f"{str(self.retrieval_service_url).rstrip('/')}/api/v1/retrieve"
         payload = RetrievalRequest(query=query, top_k=top_k)
 
         logger.debug(
@@ -88,14 +88,15 @@ class ChatProcessorService:
     ) -> str:
         """Calls the generation microservice."""
         # Use the passed-in URL
-        generation_url = f"{self.generation_service_url.rstrip('/')}/api/v1/generate"
+        generation_url = (
+            f"{str(self.generation_service_url).rstrip('/')}/api/v1/generate"
+        )
 
         prepared_context_chunks = [
             chunk.get("text", "")
             for chunk in context_chunks
             if chunk.get("text") is not None  # Ensure text key exists and is not None
         ]
-
 
         payload = GenerationRequest(
             query=user_query, context_chunks=prepared_context_chunks
@@ -129,15 +130,13 @@ class ChatProcessorService:
                 detail=f"Generation service is unavailable or encountered an error: {str(e)}",
             )
 
-    async def process(self, user_id: str, query: str) -> str:
+    async def process(self, query: str) -> str:
         """
         Orchestrates the RAG pipeline:
         1. Calls retrieval service to get context.
         2. Calls generation service with query and context to get an answer.
         """
-        logger.info(
-            f"Processing chat for user_id: {user_id}, query: '{query[:100]}...'"
-        )
+        logger.info(f"Processing chat query: '{query[:100]}...'")
 
         # Call Retrieval Service
         try:
@@ -160,7 +159,7 @@ class ChatProcessorService:
             ai_response = await self._call_generation_service(
                 user_query=query, context_chunks=retrieved_chunks
             )
-            logger.info(f"Generated AI response for user_id: {user_id}")
+            logger.info("Generated AI response")
             return ai_response
         except HTTPException as e:
             logger.error(f"Failed to generate response for query '{query}': {e.detail}")

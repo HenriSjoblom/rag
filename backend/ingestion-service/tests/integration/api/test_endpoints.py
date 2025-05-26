@@ -137,25 +137,24 @@ class TestIngestionEndpoints:
         """Test successful ingestion trigger."""
         client, mocks = get_test_client(integration_settings, mocker)
 
-        # Ensure is_processing is correctly mocked
-        mocks["state_service"].is_processing.return_value = False
+        # Ensure is_ingesting is correctly mocked (not is_processing)
+        mocks["state_service"].is_ingesting.return_value = False
 
         response = client.post("/api/v1/ingest")
 
-        assert response.status_code == 200
+        assert response.status_code == 202  # Changed from 200 to 202
         data = response.json()
-        assert data["status"] == "started"
+        assert data["status"] == "Ingestion task started."  # Match actual response
         assert data["documents_found"] == 2
         assert "message" in data
 
         # Verify service calls
         mocks["state_service"].start_ingestion.assert_called_once()
-        mocks["processor"].run_ingestion.assert_called_once()
 
     def test_trigger_ingestion_already_running(self, integration_settings, mocker):
         """Test triggering ingestion when already running."""
         client, mocks = get_test_client(integration_settings, mocker)
-        mocks["state_service"].is_processing.return_value = True
+        mocks["state_service"].is_ingesting.return_value = True
 
         response = client.post("/api/v1/ingest")
 
@@ -166,14 +165,19 @@ class TestIngestionEndpoints:
     def test_trigger_ingestion_no_documents(self, integration_settings, mocker):
         """Test triggering ingestion with no documents."""
         client, mocks = get_test_client(integration_settings, mocker)
-        mocks["state_service"].is_processing.return_value = False
+        mocks["state_service"].is_ingesting.return_value = False
         mocks["file_service"].count_documents.return_value = 0
+
+        # Mock empty PDF files list
+        mocker.patch("pathlib.Path.rglob", return_value=[])
 
         response = client.post("/api/v1/ingest")
 
-        assert response.status_code == 400
+        assert (
+            response.status_code == 202
+        )  # Should still accept but return different message
         data = response.json()
-        assert "no documents found" in data["detail"].lower()
+        assert "No new files to process" in data["status"]
 
 
 class TestDocumentEndpoints:

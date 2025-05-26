@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         ..., validation_alias="GENERATION_SERVICE_URL"
     )
     INGESTION_SERVICE_URL: AnyHttpUrl = Field(
-        validation_alias="INGESTION_SERVICE_URL",
+        ..., validation_alias="INGESTION_SERVICE_URL"
     )
     HTTP_CLIENT_TIMEOUT: float = 10.0
 

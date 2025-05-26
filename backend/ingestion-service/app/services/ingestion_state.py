@@ -24,6 +24,11 @@ class IngestionStateService:
         async with self._lock:
             return self._is_ingesting
 
+    # Add alias for backward compatibility with tests
+    async def is_processing(self) -> bool:
+        """Alias for is_ingesting for backward compatibility."""
+        return await self.is_ingesting()
+
     async def start_ingestion(self) -> bool:
         """Attempt to start ingestion."""
         async with self._lock:
