@@ -1,5 +1,6 @@
 const DOCUMENTS_BASE_URL = `${import.meta.env.VITE_API_BASE_URL}documents`;
 const CHAT_BACKEND_URL = `${import.meta.env.VITE_API_BASE_URL}chat`;
+const INGESTION_BASE_URL = `${import.meta.env.VITE_API_BASE_URL}ingestion`;
 
 /**
  * Fetches the currently uploaded document's name.
@@ -189,7 +190,7 @@ export const getIngestionStatus = async (retries = 3) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      const res = await fetch(`${DOCUMENTS_BASE_URL}/status`, {
+      const res = await fetch(`${INGESTION_BASE_URL}/status`, {
         signal: controller.signal,
       });
 
