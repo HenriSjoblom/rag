@@ -8,6 +8,7 @@ from app.deps import get_settings
 from app.routers.chat import router as chat_router
 from app.routers.documents import router as documents_router
 from app.routers.health import router as health_router
+from app.routers.ingestion import router as ingestion_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ app = FastAPI(
 # Include routers directly
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(documents_router, prefix="/api/v1")
+app.include_router(ingestion_router, prefix="/api/v1")
 app.include_router(health_router)
 
 # Add cors middleware

@@ -13,7 +13,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="LLM Generation Service",
+    title="Generation Service",
     description="Generates text responses using a configured Large Language Model based on provided context.",
     version="1.0.0",
 )
