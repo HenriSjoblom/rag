@@ -12,7 +12,6 @@ from app.services.http_client import (
 from fastapi import FastAPI, HTTPException
 
 
-
 class TestMakeRequest:
     """Test cases for make_request function."""
 
@@ -27,14 +26,11 @@ class TestMakeRequest:
         result = await make_request(
             client=mock_http_client,
             method="GET",
-            url="http://test-service/api/endpoint"
+            url="http://test-service/api/endpoint",
         )
 
         mock_http_client.request.assert_called_once_with(
-            "GET", 
-            "http://test-service/api/endpoint",
-            json=None,
-            params=None
+            "GET", "http://test-service/api/endpoint", json=None, params=None
         )
         mock_response.raise_for_status.assert_called_once()
         assert result == {"status": "success"}
@@ -51,14 +47,11 @@ class TestMakeRequest:
             client=mock_http_client,
             method="POST",
             url="http://test-service/api/create",
-            json_data=json_data
+            json_data=json_data,
         )
 
         mock_http_client.request.assert_called_once_with(
-            "POST",
-            "http://test-service/api/create",
-            json=json_data,
-            params=None
+            "POST", "http://test-service/api/create", json=json_data, params=None
         )
         assert result == {"id": 123, "message": "created"}
 
@@ -74,26 +67,25 @@ class TestMakeRequest:
             client=mock_http_client,
             method="GET",
             url="http://test-service/api/search",
-            params=params
+            params=params,
         )
 
         mock_http_client.request.assert_called_once_with(
-            "GET",
-            "http://test-service/api/search",
-            json=None,
-            params=params
+            "GET", "http://test-service/api/search", json=None, params=params
         )
 
     @pytest.mark.asyncio
     async def test_make_request_timeout_exception(self, mock_http_client, mocker):
         """Test handling of timeout exceptions."""
-        mock_http_client.request.side_effect = httpx.TimeoutException("Request timed out")
+        mock_http_client.request.side_effect = httpx.TimeoutException(
+            "Request timed out"
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await make_request(
                 client=mock_http_client,
                 method="GET",
-                url="http://test-service/api/slow"
+                url="http://test-service/api/slow",
             )
 
         assert exc_info.value.status_code == 504
@@ -108,7 +100,7 @@ class TestMakeRequest:
             await make_request(
                 client=mock_http_client,
                 method="GET",
-                url="http://unreachable-service/api/endpoint"
+                url="http://unreachable-service/api/endpoint",
             )
 
         assert exc_info.value.status_code == 503
@@ -120,11 +112,9 @@ class TestMakeRequest:
         mock_response = mocker.MagicMock()
         mock_response.status_code = 404
         mock_response.text = "Not Found"
-        
+
         http_status_error = httpx.HTTPStatusError(
-            "404 Not Found",
-            request=mocker.MagicMock(),
-            response=mock_response
+            "404 Not Found", request=mocker.MagicMock(), response=mock_response
         )
         mock_http_client.request.side_effect = http_status_error
 
@@ -132,7 +122,7 @@ class TestMakeRequest:
             await make_request(
                 client=mock_http_client,
                 method="GET",
-                url="http://test-service/api/missing"
+                url="http://test-service/api/missing",
             )
 
         assert exc_info.value.status_code == 404
@@ -146,9 +136,7 @@ class TestMakeRequest:
 
         with pytest.raises(HTTPException) as exc_info:
             await make_request(
-                client=mock_http_client,
-                method="GET",
-                url="http://invalid-url"
+                client=mock_http_client, method="GET", url="http://invalid-url"
             )
 
         assert exc_info.value.status_code == 503
@@ -162,9 +150,7 @@ class TestMakeRequest:
         mock_http_client.request.return_value = mock_response
 
         result = await make_request(
-            client=mock_http_client,
-            method="GET",
-            url="http://test-service/api/list"
+            client=mock_http_client, method="GET", url="http://test-service/api/list"
         )
 
         assert isinstance(result, list)
@@ -180,11 +166,10 @@ class TestLifespanHttpClient:
         """Test that lifespan properly initializes and closes HTTP client."""
         mock_app = mocker.MagicMock(spec=FastAPI)
         mock_client = mocker.AsyncMock(spec=httpx.AsyncClient)
-        
+
         # Mock the AsyncClient constructor
         mock_async_client_class = mocker.patch(
-            "app.services.http_client.httpx.AsyncClient",
-            return_value=mock_client
+            "app.services.http_client.httpx.AsyncClient", return_value=mock_client
         )
 
         async with lifespan_http_client(mock_app, timeout=30.0):
@@ -199,10 +184,12 @@ class TestLifespanHttpClient:
         """Test warning when client instance already exists."""
         mock_app = mocker.MagicMock(spec=FastAPI)
         mock_client = mocker.AsyncMock(spec=httpx.AsyncClient)
-        
+
         # Patch the global variable to simulate existing instance
         mocker.patch("app.services.http_client._http_client_instance", mock_client)
-        mocker.patch("app.services.http_client.httpx.AsyncClient", return_value=mock_client)
+        mocker.patch(
+            "app.services.http_client.httpx.AsyncClient", return_value=mock_client
+        )
 
         async with lifespan_http_client(mock_app, timeout=30.0):
             pass
@@ -213,7 +200,7 @@ class TestLifespanHttpClient:
     async def test_lifespan_http_client_close_when_none(self, mocker, caplog):
         """Test warning when trying to close non-existent client."""
         mock_app = mocker.MagicMock(spec=FastAPI)
-        
+
         # Mock to return None when trying to close
         mocker.patch("app.services.http_client._http_client_instance", None)
         mocker.patch("app.services.http_client.httpx.AsyncClient")

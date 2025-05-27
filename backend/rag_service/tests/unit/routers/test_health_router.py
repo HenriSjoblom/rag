@@ -3,7 +3,6 @@ Unit tests for health router endpoints in the RAG service.
 """
 
 import pytest
-
 from app.routers.health import health_check
 
 
@@ -49,7 +48,6 @@ class TestHealthCheck:
     @pytest.mark.asyncio
     async def test_health_check_is_async(self):
         """Test that health check function is properly async."""
-        import asyncio
         import inspect
 
         # Verify function is async

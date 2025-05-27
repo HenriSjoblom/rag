@@ -296,7 +296,7 @@ class TestDocumentStatus:
 
     def test_get_document_status(self, configured_ingestion_client):
         """Test getting document ingestion status."""
-        response = configured_ingestion_client.get("/api/v1/documents/status")
+        response = configured_ingestion_client.get("/api/v1/ingestion/status")
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         data = response.json()
@@ -305,7 +305,7 @@ class TestDocumentStatus:
 
     def test_status_response_structure(self, configured_ingestion_client):
         """Test structure of status response."""
-        response = configured_ingestion_client.get("/api/v1/documents/status")
+        response = configured_ingestion_client.get("/api/v1/ingestion/status")
 
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         data = response.json()
@@ -531,7 +531,7 @@ class TestDocumentWorkflow:
         assert list_response.status_code == status.HTTP_200_OK
 
         # Step 3: Check status
-        status_response = configured_ingestion_client.get("/api/v1/documents/status")
+        status_response = configured_ingestion_client.get("/api/v1/ingestion/status")
         assert status_response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
         # Step 4: Delete documents
@@ -560,7 +560,7 @@ class TestDocumentWorkflow:
         assert list_response.status_code == status.HTTP_200_OK
 
         # Check status
-        status_response = configured_ingestion_client.get("/api/v1/documents/status")
+        status_response = configured_ingestion_client.get("/api/v1/ingestion/status")
         assert status_response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
         # Clean up
