@@ -40,13 +40,13 @@ Content-Type: application/pdf
 ------WebKitFormBoundaryRAGUpload--
 
 ### List Documents via RAG Service (with trailing slash)
-GET {{rag-service}}/api/v1/documents/
+GET {{rag-service}}/api/v1/documents
 
 ### Delete Documents via RAG Service
 DELETE {{rag-service}}/api/v1/documents
 
 ### Get Ingestion Status via RAG Service
-GET {{rag-service}}/api/v1/documents/status
+GET {{rag-service}}/api/v1/ingestion/status
 
 # =============================================================================
 # RETRIEVER SERVICE TESTS
@@ -77,7 +77,7 @@ Content-Type: application/json
 {
     "query": "What key information is provided about iPhone's safety, potential for medical device interference, and regulatory compliance?",
     "context_chunks": [
-        "sound and in "Important safety information" in the iPhone User Guide. Medical Device Interference iPhone contains magnets as well as components and/or radios that may interfere with medical devices. See "Important safety information" in the iPhone User Guide. Regulatory Regulatory certification information is available on-device. Go to Settings > General > Legal & Regulatory. Additional regulatory information is in "Safety, handling, and support" in the iPhone User Guide. FCC and ISED Canada Compliance This device complies with part 15 of the FCC Rules and ISED Canada licence-exempt RSS standard(s). Operation"
+        "sound and in \"Important safety information\" in the iPhone User Guide. Medical Device Interference iPhone contains magnets as well as components and/or radios that may interfere with medical devices. See \"Important safety information\" in the iPhone User Guide. Regulatory Regulatory certification information is available on-device. Go to Settings > General > Legal & Regulatory. Additional regulatory information is in \"Safety, handling, and support\" in the iPhone User Guide. FCC and ISED Canada Compliance This device complies with part 15 of the FCC Rules and ISED Canada licence-exempt RSS standard(s). Operation"
     ]
 }
 
@@ -116,10 +116,7 @@ Content-Type: application/pdf
 ### Trigger Ingestion Process
 POST {{ingestion-service}}/api/v1/ingest
 
-### List Source Documents (with trailing slash)
-GET {{ingestion-service}}/api/v1/documents/
-
-### List Source Documents (without trailing slash)
+### List Source Documents
 GET {{ingestion-service}}/api/v1/documents
 
 ### Get Ingestion Status
