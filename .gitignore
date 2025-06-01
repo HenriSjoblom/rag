@@ -179,3 +179,5 @@ cython_debug/
 
 test_temp_data/
 data/
+
+project_structure.txt
