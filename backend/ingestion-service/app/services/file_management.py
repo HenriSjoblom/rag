@@ -16,8 +16,8 @@ class FileManagementService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.source_directory = Path(settings.SOURCE_DIRECTORY)
-        # Set default max file size if not configured (50MB default)
-        self.max_file_size_mb = getattr(settings, "MAX_FILE_SIZE_MB", 50)
+        # Set default max file size if not configured (500MB default)
+        self.max_file_size_mb = getattr(settings, "MAX_FILE_SIZE_MB", 500)
         self._ensure_source_directory()
         logger.info(
             f"FileManagementService initialized with source directory: {self.source_directory}"

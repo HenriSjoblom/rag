@@ -53,26 +53,9 @@ def get_file_management_service(
     return FileManagementService(settings)
 
 
-def get_collection_manager_service(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-) -> CollectionManagerService:
-    """Dependency to get CollectionManagerService instance."""
-    chroma_manager = request.app.state.chroma_manager
-    vector_store_manager = request.app.state.vector_store_manager
-    return CollectionManagerService(settings, chroma_manager, vector_store_manager)
-
-
 def get_ingestion_state_service(request: Request) -> IngestionStateService:
     """Dependency to get IngestionStateService from application state."""
     return request.app.state.ingestion_state_service
-
-
-def get_document_service(
-    settings: Settings = Depends(get_settings),
-) -> FileManagementService:
-    """Alias for backward compatibility - use get_file_management_service instead."""
-    return FileManagementService(settings)
 
 
 def get_file_upload_service(
