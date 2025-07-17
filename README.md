@@ -1,12 +1,22 @@
 # RAG System for User Manual Assistant
 
-A microservices-based Retrieval-Augmented Generation (RAG) system for document processing and question answering. This backend orchestrates multiple services to provide intelligent responses based on uploaded user manual documents.
+A microservices-based Retrieval-Augmented Generation (RAG) system designed to answer questions about user manuals. It includes a complete backend that orchestrates document processing and response generation, along with a React frontend for testing.
 
 ## Architecture Overview
 
 The RAG backend consists of four main microservices:
 
 ![rag_diagram_en](https://github.com/user-attachments/assets/016190c1-4630-4a39-9fdf-788e791d836c)
+
+### Technology Stack
+
+| Component | Technology/Library |
+| :--- | :--- |
+| Backend Framework | FastAPI |
+| Vector Database | ChromaDB |
+| LLM Integration | OpenAI API |
+| Embedding Model | Sentence Transformers |
+| Containerization | Docker & Docker Compose |
 
 ### Service Responsibilities
 
@@ -28,8 +38,6 @@ The RAG backend consists of four main microservices:
 
 - **LLM-powered response generation** using OpenAI API
 - Takes user queries and retrieved context to generate answers
-- Implements RAG prompt templates for better responses
-- Handles LLM error cases and rate limiting
 
 #### Ingestion Service (Port 8004)
 
@@ -48,10 +56,6 @@ The RAG backend consists of four main microservices:
 ### Using Docker Compose (Recommended)
 
 1. **Clone and navigate to the backend directory**
-
-   ```bash
-   cd c:\Users\henri\Documents\projektit\rag\backend
-   ```
 
 2. **Configure environment variables**
 
@@ -82,164 +86,47 @@ The RAG backend consists of four main microservices:
    curl http://localhost:8000/api/v1/heartbeat  # ChromaDB
    ```
 
-## API Documentation
-
-### RAG Service (Main API)
-
-#### Health Check
-
-```http
-GET /health
-```
-
-#### Chat with Documents
-
-```http
-POST /api/v1/chat
-Content-Type: application/json
-
-{
-    "message": "How do I reset my iPhone?"
-}
-```
-
-#### Upload Documents
-
-```http
-POST /api/v1/documents/upload
-Content-Type: multipart/form-data
-
-file: [PDF file]
-```
-
-#### List Documents
-
-```http
-GET /api/v1/documents
-```
-
-#### Delete All Documents
-
-```http
-DELETE /api/v1/documents
-```
-
-#### Get Ingestion Status
-
-```http
-GET /api/v1/ingestion/status
-```
-
-### Direct Service APIs
-
-#### Retrieval Service
-
-```http
-POST /api/v1/retrieve
-Content-Type: application/json
-
-{
-    "query": "iPhone camera features"
-}
-```
-
-#### Generation Service
-
-```http
-POST /api/v1/generate
-Content-Type: application/json
-
-{
-    "query": "How do I use the camera?",
-    "context_chunks": ["Camera section from manual..."]
-}
-```
-
-#### Ingestion Service
-
-```http
-# Upload file
-POST /api/v1/upload
-Content-Type: multipart/form-data
-
-# Trigger ingestion
-POST /api/v1/ingest
-
-# Check status
-GET /api/v1/status
-
-# Clear data
-DELETE /api/v1/collection
-```
-
-## Development Setup
-
-### Individual Service Development
-
-1. **Set up Python environment**
-
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-2. **Install dependencies for a service**
-
-   ```bash
-   cd rag_service  # or retrieval_service, generation_service, ingestion-service
-   pip install -r requirements.txt
-   ```
-
-3. **Run service locally**
-   ```bash
-   uvicorn app.main:app --reload --port 8001
-   ```
-
-### Testing
-
-#### Run Unit Tests
-
-```bash
-# In each service directory
-pytest tests/unit/ -v
-```
-
-#### Run Integration Tests
-
-```bash
-# In each service directory
-pytest tests/integration/ -v
-```
-
-
 
 ## Configuration
 
-### Environment Variables
+## Configuration
 
-#### RAG Service
+Each service is configured via environment variables.
 
-- `RETRIEVAL_SERVICE_URL`: URL to retrieval service
-- `GENERATION_SERVICE_URL`: URL to generation service
-- `INGESTION_SERVICE_URL`: URL to ingestion service
+#### RAG Service (`rag_service/.env`)
+| Variable | Required | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `RETRIEVAL_SERVICE_URL` | Yes | `http://retrieval_service:8002` | URL to the retrieval service. |
+| `GENERATION_SERVICE_URL`| Yes | `http://generation_service:8003` | URL to the generation service. |
+| `INGESTION_SERVICE_URL` | Yes | `http://ingestion_service:8004` | URL to the ingestion service. |
 
-#### Retrieval Service
+#### Retrieval Service (`retrieval_service/.env`)
+| Variable | Required | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `CHROMA_MODE` | Yes | `docker` | docker or local. Local only for testing |
+| `CHROMA_HOST` | Yes | `chromadb` | Hostname of the ChromaDB service. |
+| `CHROMA_PORT` | Yes | `8000` | Port for the ChromaDB service. |
+| `CHROMA_COLLECTION_NAME`| Yes | `support_docs` | ChromaDb collection name |
+| `EMBEDDING_MODEL_NAME`| Yes | `all-MiniLM-L6-v2` | Sentence transformer model for embeddings. |
+| `TOP_K_RESULTS`| Yes | `5` | Number of relevant chunks to retrieve. |
 
-- `CHROMA_HOST`: ChromaDB host
-- `CHROMA_PORT`: ChromaDB port
-- `EMBEDDING_MODEL_NAME`: Sentence transformer model
+#### Generation Service (`generation_service/.env`)
+| Variable | Required | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `OPENAI_API_KEY` | **Yes** | `""` | **Your secret OpenAI API key.** |
+| `LLM_MODEL` | Yes | `gpt` | OpenAI model to use for generation. |
+| `LLM_PROVIDER` | Yes | `openai` | LLM provider. Currently only Open AI available |
 
-#### Generation Service
+#### Ingestion Service (`ingestion-service/.env`)
+| Variable | Required | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `CHROMA_MODE` | Yes | `docker` | docker or local. Local only for testing |
+| `CHROMA_HOST` | Yes | `chromadb` | Hostname of the ChromaDB service. |
+| `CHROMA_PORT` | Yes | `8000` | Port for the ChromaDB service. |
+| `SOURCE_DIRECTORY` | Yes | `/app/documents` | Directory inside the container for storing uploaded files. |
+| `EMBEDDING_MODEL_NAME`| Yes | `all-MiniLM-L6-v2` | Sentence transformer model for embeddings. |
+| `CHROMA_COLLECTION_NAME`| Yes | `support_docs` | ChromaDB collection name |
 
-- `OPENAI_API_KEY`: OpenAI API key (required)
-- `LLM_MODEL_NAME`: OpenAI model to use
-- `LLM_TEMPERATURE`: Response creativity (0.0-1.0)
-
-#### Ingestion Service
-
-- `CHROMA_HOST`: ChromaDB host
-- `CHROMA_PORT`: ChromaDB port
-- `SOURCE_DIRECTORY`: Directory for uploaded files
 
 ## Usage Examples
 
@@ -252,13 +139,7 @@ pytest tests/integration/ -v
      -F "file=@path/to/document.pdf"
    ```
 
-2. **Wait for processing** (automatic with file upload)
-
-   ```bash
-   curl http://localhost:8001/api/v1/ingestion/status
-   ```
-
-3. **Ask questions about the document**
+2. **Ask questions about the document**
    ```bash
    curl -X POST http://localhost:8001/api/v1/chat \
      -H "Content-Type: application/json" \
@@ -273,41 +154,5 @@ pytest tests/integration/ -v
 - Retrieval Service: http://localhost:8002/docs
 - Generation Service: http://localhost:8003/docs
 - Ingestion Service: http://localhost:8004/docs
-
-### Response Formats
-
-#### Chat Response
-
-```json
-{
-  "query": "How do I reset my device?",
-  "response": "To reset your device, follow these steps: 1. Go to Settings..."
-}
-```
-
-#### Document Upload Response
-
-```json
-{
-  "status": "Upload accepted",
-  "message": "File uploaded and ingestion started",
-  "filename": "manual.pdf"
-}
-```
-
-#### Retrieval Response
-
-```json
-{
-  "chunks": [
-    "Text chunk 1 from documents...",
-    "Text chunk 2 from documents..."
-  ],
-  "collection_name": "documents",
-  "query": "original query"
-}
-```
-
----
 
 For more detailed information about individual services, check the service-specific documentation in each service directory.
