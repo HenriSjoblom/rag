@@ -1,158 +1,205 @@
-# RAG System for User Manual Assistant
+# RAG Backend System
 
-A microservices-based Retrieval-Augmented Generation (RAG) system designed to answer questions about user manuals. It includes a complete backend that orchestrates document processing and response generation, along with a React frontend for testing.
+A microservices-based Retrieval-Augmented Generation (RAG) system for processing user manuals and providing intelligent question answering. Upload technical documentation, product manuals, or user guides and get answers based on the manual content.
 
-## Architecture Overview
+## Architecture
 
-The RAG backend consists of four main microservices:
+Four microservices orchestrated by Docker Compose:
 
 ![rag_diagram_en](https://github.com/user-attachments/assets/016190c1-4630-4a39-9fdf-788e791d836c)
 
-### Technology Stack
-
-| Component | Technology/Library |
-| :--- | :--- |
-| Backend Framework | FastAPI |
-| Vector Database | ChromaDB |
-| LLM Integration | OpenAI API |
-| Embedding Model | Sentence Transformers |
-| Containerization | Docker & Docker Compose |
-
 ### Service Responsibilities
 
-#### RAG Service (Port 8001)
+#### RAG Service
 
 - **Main orchestrator** that coordinates all other services
 - Handles chat requests by calling retrieval → generation pipeline
 - Manages document uploads by forwarding to ingestion service
 - Provides unified API for frontend applications
 
-#### Retrieval Service (Port 8002)
+#### Retrieval Service
 
 - Performs **vector similarity search** on document embeddings
 - Connects to ChromaDB for efficient retrieval
 - Uses sentence transformers for query embeddings
 - Returns relevant document chunks for context
 
-#### Generation Service (Port 8003)
+#### Generation Service
 
 - **LLM-powered response generation** using OpenAI API
 - Takes user queries and retrieved context to generate answers
 
-#### Ingestion Service (Port 8004)
+#### Ingestion Service
 
 - **Document processing pipeline** for PDF files
 - Extracts text, chunks documents, and creates embeddings
 - Stores processed chunks in ChromaDB
 - Manages document lifecycle (upload, process, delete)
 
-## Quick Start
 
-### Prerequisites
+## Technologies
 
-- Docker and Docker Compose
-- OpenAI API key (for generation service)
+**Backend Framework:**
 
-### Using Docker Compose (Recommended)
+- FastAPI - Web framework for building APIs
+- Python 3.11+ - Programming language
+- OpenAI GPT-4.1 - Large Language Model for text generation
+- Sentence Transformers - Text embedding models
+- ChromaDB - Vector database for similarity search
+- Langchain - RAG pipeline orchestration framework
 
-1. **Clone and navigate to the backend directory**
+**Infrastructure:**
 
-2. **Configure environment variables**
+- Docker & Docker Compose - Containerization and orchestration
+
+**RAG Pipeline:**
+
+1. **Ingestion** - PyPDF extracts text, Langchain splits into chunks, Sentence Transformers create embeddings, ChromaDB stores vectors
+2. **Retrieval** - Sentence Transformers embed user questions, ChromaDB performs vector similarity search to find relevant chunks
+3. **Generation** - OpenAI GPT-4.1 receives question + retrieved context to generate answers
+
+## Quick Start (Backend Only)
+
+1. **Configure environment**
 
    ```bash
-   # Copy example env files
+   # Copy and edit .env files
    cp rag_service/.env.example rag_service/.env
    cp retrieval_service/.env.example retrieval_service/.env
    cp generation_service/.env.example generation_service/.env
    cp ingestion-service/.env.example ingestion-service/.env
 
-   # Edit generation_service/.env to add your OpenAI API key
-   # OPENAI_API_KEY=your-api-key-here
+   # Add your OpenAI API key to generation_service/.env
    ```
 
-3. **Start all services**
+2. **Start all services**
 
    ```bash
    docker-compose -f compose.backend.yml up -d
    ```
 
-4. **Verify services are running**
+3. **Verify health**
    ```bash
-   # Check service health
-   curl http://localhost:8001/health  # RAG Service
-   curl http://localhost:8002/health  # Retrieval Service
-   curl http://localhost:8003/health  # Generation Service
-   curl http://localhost:8004/health  # Ingestion Service
-   curl http://localhost:8000/api/v1/heartbeat  # ChromaDB
+   curl http://localhost:8001/health
    ```
 
+## Quick Start with Frontend (Testing)
 
-## Configuration
+The frontend provides a web interface for testing the RAG system functionality.
+
+1. **Configure environment**
+
+   ```bash
+   # Copy and edit backend .env files
+   cp rag_service/.env.example rag_service/.env
+   cp retrieval_service/.env.example retrieval_service/.env
+   cp generation_service/.env.example generation_service/.env
+   cp ingestion-service/.env.example ingestion-service/.env
+
+   # Add your OpenAI API key to generation_service/.env
+   ```
+
+2. **Start backend and frontend**
+
+   ```bash
+   # Start all services including frontend
+   docker-compose -f compose.yml up -d
+   ```
+
+3. **Access the testing interface**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8001/docs
+
+## Key API Endpoints
+
+### Upload & Chat (Main workflow)
+
+```bash
+# Upload document
+curl -X POST http://localhost:8001/api/v1/documents/upload \
+  -F "file=@document.pdf"
+
+# Ask questions
+curl -X POST http://localhost:8001/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "What does the document say about X?"}'
+```
 
 ## Configuration
 
 Each service is configured via environment variables.
 
 #### RAG Service (`rag_service/.env`)
-| Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `RETRIEVAL_SERVICE_URL` | Yes | `http://retrieval_service:8002` | URL to the retrieval service. |
-| `GENERATION_SERVICE_URL`| Yes | `http://generation_service:8003` | URL to the generation service. |
-| `INGESTION_SERVICE_URL` | Yes | `http://ingestion_service:8004` | URL to the ingestion service. |
+
+| Variable                 | Required | Default                          | Description                    |
+| :----------------------- | :------- | :------------------------------- | :----------------------------- |
+| `RETRIEVAL_SERVICE_URL`  | Yes      | `http://retrieval_service:8002`  | URL to the retrieval service.  |
+| `GENERATION_SERVICE_URL` | Yes      | `http://generation_service:8003` | URL to the generation service. |
+| `INGESTION_SERVICE_URL`  | Yes      | `http://ingestion_service:8004`  | URL to the ingestion service.  |
 
 #### Retrieval Service (`retrieval_service/.env`)
-| Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `CHROMA_MODE` | Yes | `docker` | docker or local. Local only for testing |
-| `CHROMA_HOST` | Yes | `chromadb` | Hostname of the ChromaDB service. |
-| `CHROMA_PORT` | Yes | `8000` | Port for the ChromaDB service. |
-| `CHROMA_COLLECTION_NAME`| Yes | `support_docs` | ChromaDb collection name |
-| `EMBEDDING_MODEL_NAME`| Yes | `all-MiniLM-L6-v2` | Sentence transformer model for embeddings. |
-| `TOP_K_RESULTS`| Yes | `5` | Number of relevant chunks to retrieve. |
+
+| Variable                 | Required | Default            | Description                                |
+| :----------------------- | :------- | :----------------- | :----------------------------------------- |
+| `CHROMA_MODE`            | Yes      | `docker`           | docker or local. Local only for testing    |
+| `CHROMA_HOST`            | Yes      | `chromadb`         | Hostname of the ChromaDB service.          |
+| `CHROMA_PORT`            | Yes      | `8000`             | Port for the ChromaDB service.             |
+| `CHROMA_COLLECTION_NAME` | Yes      | `support_docs`     | ChromaDb collection name                   |
+| `EMBEDDING_MODEL_NAME`   | Yes      | `all-MiniLM-L6-v2` | Sentence transformer model for embeddings. |
+| `TOP_K_RESULTS`          | Yes      | `5`                | Number of relevant chunks to retrieve.     |
 
 #### Generation Service (`generation_service/.env`)
-| Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `OPENAI_API_KEY` | **Yes** | `""` | **Your secret OpenAI API key.** |
-| `LLM_MODEL` | Yes | `gpt` | OpenAI model to use for generation. |
-| `LLM_PROVIDER` | Yes | `openai` | LLM provider. Currently only Open AI available |
+
+| Variable         | Required | Default  | Description                                    |
+| :--------------- | :------- | :------- | :--------------------------------------------- |
+| `OPENAI_API_KEY` | **Yes**  | `""`     | **Your secret OpenAI API key.**                |
+| `LLM_MODEL`      | Yes      | `gpt`    | OpenAI model to use for generation.            |
+| `LLM_PROVIDER`   | Yes      | `openai` | LLM provider. Currently only Open AI available |
 
 #### Ingestion Service (`ingestion-service/.env`)
-| Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `CHROMA_MODE` | Yes | `docker` | docker or local. Local only for testing |
-| `CHROMA_HOST` | Yes | `chromadb` | Hostname of the ChromaDB service. |
-| `CHROMA_PORT` | Yes | `8000` | Port for the ChromaDB service. |
-| `SOURCE_DIRECTORY` | Yes | `/app/documents` | Directory inside the container for storing uploaded files. |
-| `EMBEDDING_MODEL_NAME`| Yes | `all-MiniLM-L6-v2` | Sentence transformer model for embeddings. |
-| `CHROMA_COLLECTION_NAME`| Yes | `support_docs` | ChromaDB collection name |
 
+| Variable                 | Required | Default            | Description                                                |
+| :----------------------- | :------- | :----------------- | :--------------------------------------------------------- |
+| `CHROMA_MODE`            | Yes      | `docker`           | docker or local. Local only for testing                    |
+| `CHROMA_HOST`            | Yes      | `chromadb`         | Hostname of the ChromaDB service.                          |
+| `CHROMA_PORT`            | Yes      | `8000`             | Port for the ChromaDB service.                             |
+| `SOURCE_DIRECTORY`       | Yes      | `/app/documents`   | Directory inside the container for storing uploaded files. |
+| `EMBEDDING_MODEL_NAME`   | Yes      | `all-MiniLM-L6-v2` | Sentence transformer model for embeddings.                 |
+| `CHROMA_COLLECTION_NAME` | Yes      | `support_docs`     | ChromaDB collection name                                   |
 
-## Usage Examples
+## API Documentation
 
-### Document Processing Workflow
+Interactive docs available at:
 
-1. **Upload a document**
+- http://localhost:8001/docs (RAG Service)
+- http://localhost:8002/docs (Retrieval)
+- http://localhost:8003/docs (Generation)
+- http://localhost:8004/docs (Ingestion)
 
-   ```bash
-   curl -X POST http://localhost:8001/api/v1/documents/upload \
-     -F "file=@path/to/document.pdf"
-   ```
+## Troubleshooting
 
-2. **Ask questions about the document**
-   ```bash
-   curl -X POST http://localhost:8001/api/v1/chat \
-     -H "Content-Type: application/json" \
-     -d '{"message": "What are the main features described in the document?"}'
-   ```
+**Services won't start:**
 
-## API Reference
+```bash
+docker-compose -f compose.backend.yml logs [service-name]
+```
 
-### Complete OpenAPI Documentation
+**ChromaDB connection failed:**
 
-- RAG Service: http://localhost:8001/docs
-- Retrieval Service: http://localhost:8002/docs
-- Generation Service: http://localhost:8003/docs
-- Ingestion Service: http://localhost:8004/docs
+```bash
+curl http://localhost:8000/api/v1/heartbeat
+```
 
-For more detailed information about individual services, check the service-specific documentation in each service directory.
+**OpenAI API errors:**
+
+- Check API key in `generation_service/.env`
+- Verify account has credits
+- Monitor rate limits in logs
+
+### Reset Everything
+
+```bash
+docker-compose -f compose.backend.yml down
+docker volume rm backend_chroma_data
+docker-compose -f compose.backend.yml up -d
+```
