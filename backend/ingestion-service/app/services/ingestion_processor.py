@@ -5,10 +5,9 @@ from typing import List
 
 from app.config import Settings
 from app.models import IngestionStatus
-from app.services.chroma_manager import (
-    ChromaClientManager,
-    EmbeddingModelManager,
-    VectorStoreManager,
+from app.services.chroma_manager import ChromaClientManager
+from app.services.embedding_manager import EmbeddingModelManager
+from app.services.vector_store_manager import VectorStoreManager
 )
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
